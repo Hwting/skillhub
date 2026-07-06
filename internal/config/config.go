@@ -14,6 +14,15 @@ type Config struct {
 	Redis   RedisConfig   `mapstructure:"redis"`
 	Storage StorageConfig `mapstructure:"storage"`
 	Log     LogConfig     `mapstructure:"log"`
+	Auth    AuthConfig    `mapstructure:"auth"`
+}
+
+type AuthConfig struct {
+	SessionTTL     time.Duration `mapstructure:"session_ttl"`
+	CookieName     string        `mapstructure:"cookie_name"`
+	CookieSecure   bool          `mapstructure:"cookie_secure"`
+	CookieDomain   string        `mapstructure:"cookie_domain"`
+	CookieSameSite string        `mapstructure:"cookie_samesite"`
 }
 
 type ServerConfig struct {
@@ -107,6 +116,20 @@ func (c *Config) Validate() error {
 	}
 	if c.Log.Level == "" {
 		return fmt.Errorf("log.level is required")
+	}
+	if c.Auth.SessionTTL <= 0 {
+		return fmt.Errorf("auth.session_ttl must be > 0")
+	}
+	if c.Auth.CookieName == "" {
+		return fmt.Errorf("auth.cookie_name is required")
+	}
+	switch c.Auth.CookieSameSite {
+	case "strict", "lax", "none":
+	default:
+		return fmt.Errorf("auth.cookie_samesite must be strict|lax|none, got %q", c.Auth.CookieSameSite)
+	}
+	if c.Auth.CookieSameSite == "none" && !c.Auth.CookieSecure {
+		return fmt.Errorf("auth.cookie_secure must be true when cookie_samesite is none")
 	}
 	return nil
 }

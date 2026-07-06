@@ -3,12 +3,15 @@ package main
 import (
 	"net/http"
 
+	"github.com/skillhub/skillhub/internal/audit"
+	"github.com/skillhub/skillhub/internal/auth"
 	"github.com/skillhub/skillhub/internal/config"
 	"github.com/skillhub/skillhub/internal/db"
 	"github.com/skillhub/skillhub/internal/httpserver"
 	"github.com/skillhub/skillhub/internal/log"
 	redispkg "github.com/skillhub/skillhub/internal/redis"
 	"github.com/skillhub/skillhub/internal/storage"
+	"github.com/skillhub/skillhub/internal/user"
 	"go.uber.org/zap"
 )
 
@@ -34,11 +37,19 @@ func main() {
 		logger.Fatal("init storage", zap.Error(err))
 	}
 
+	auditLogger := audit.NewLogger(gdb, logger)
+	userRepo := user.NewRepo(gdb)
+	userSvc := user.NewService(userRepo, auditLogger)
+	sessionMgr := auth.NewSessionManager(rdb, cfg.Auth)
+
 	engine := httpserver.New(httpserver.Deps{
-		Logger:  logger,
-		DB:      gdb,
-		Redis:   rdb,
-		Storage: store,
+		Logger:     logger,
+		DB:         gdb,
+		Redis:      rdb,
+		Storage:    store,
+		UserSvc:    userSvc,
+		SessionMgr: sessionMgr,
+		UserRepo:   userRepo,
 	})
 	srv := &http.Server{
 		Addr:         cfg.Server.Addr,

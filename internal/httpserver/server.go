@@ -8,10 +8,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/skillhub/skillhub/internal/auth"
 	"github.com/skillhub/skillhub/internal/db"
+	"github.com/skillhub/skillhub/internal/httpserver/handlers"
 	"github.com/skillhub/skillhub/internal/httpserver/middleware"
 	redispkg "github.com/skillhub/skillhub/internal/redis"
 	"github.com/skillhub/skillhub/internal/storage"
+	"github.com/skillhub/skillhub/internal/user"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -19,10 +22,13 @@ import (
 )
 
 type Deps struct {
-	Logger  *zap.Logger
-	DB      *gorm.DB
-	Redis   *rdb.Client
-	Storage storage.Store
+	Logger     *zap.Logger
+	DB         *gorm.DB
+	Redis      *rdb.Client
+	Storage    storage.Store
+	UserSvc    *user.Service
+	SessionMgr *auth.SessionManager
+	UserRepo   user.Repo
 }
 
 func New(deps Deps) *gin.Engine {
@@ -30,6 +36,9 @@ func New(deps Deps) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.RequestID(), middleware.Recover(deps.Logger), middleware.AccessLog(deps.Logger), middleware.Errors())
 	r.GET("/healthz", healthz(deps))
+	if deps.UserSvc != nil && deps.SessionMgr != nil && deps.UserRepo != nil {
+		handlers.Register(r, deps.UserSvc, deps.SessionMgr, deps.UserRepo)
+	}
 	return r
 }
 
