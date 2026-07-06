@@ -11,6 +11,7 @@ import (
 	"github.com/skillhub/skillhub/internal/db"
 	"github.com/skillhub/skillhub/internal/httpserver/middleware"
 	redispkg "github.com/skillhub/skillhub/internal/redis"
+	"github.com/skillhub/skillhub/internal/storage"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -18,9 +19,10 @@ import (
 )
 
 type Deps struct {
-	Logger *zap.Logger
-	DB     *gorm.DB
-	Redis  *rdb.Client
+	Logger  *zap.Logger
+	DB      *gorm.DB
+	Redis   *rdb.Client
+	Storage storage.Store
 }
 
 func New(deps Deps) *gin.Engine {

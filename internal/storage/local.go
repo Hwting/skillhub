@@ -14,16 +14,12 @@ type LocalStore struct {
 }
 
 func NewLocal(root string) (*LocalStore, error) {
-	fi, err := os.Stat(root)
-	if err != nil {
-		return nil, fmt.Errorf("storage root not accessible: %w", err)
-	}
-	if !fi.IsDir() {
-		return nil, fmt.Errorf("storage root is not a directory: %s", root)
-	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("abs root: %w", err)
+	}
+	if err := os.MkdirAll(abs, 0o755); err != nil {
+		return nil, fmt.Errorf("create storage root: %w", err)
 	}
 	return &LocalStore{root: abs}, nil
 }

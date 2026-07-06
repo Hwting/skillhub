@@ -48,8 +48,16 @@ func TestLocal_PutGetDelete(t *testing.T) {
 	}
 }
 
-func TestLocal_NewLocal_MissingRoot(t *testing.T) {
-	if _, err := NewLocal(filepath.Join(t.TempDir(), "nope")); err == nil {
-		t.Fatal("expected error for missing root")
+func TestLocal_NewLocal_CreatesMissingRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "nope")
+	s, err := NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s == nil {
+		t.Fatal("nil store")
+	}
+	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
+		t.Fatalf("root not created: %v", err)
 	}
 }

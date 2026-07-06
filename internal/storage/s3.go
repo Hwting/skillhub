@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
-	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -18,11 +16,7 @@ type S3Store struct {
 }
 
 func NewS3(cfg config.S3Storage) (*S3Store, error) {
-	u, err := url.Parse(cfg.Endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("parse endpoint: %w", err)
-	}
-	c, err := minio.New(u.Host, &minio.Options{
+	c, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:        credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure:       cfg.UseSSL,
 		Region:       cfg.Region,
@@ -70,5 +64,3 @@ func (s *S3Store) Stat(ctx context.Context, key string) (ObjectInfo, error) {
 	}, nil
 }
 
-// 触发 time 引用，避免未使用导入在扩展时遗漏
-var _ = time.Time{}
