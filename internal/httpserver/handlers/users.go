@@ -20,6 +20,15 @@ func NewUserHandlers(svc *user.Service) *UserHandlers { return &UserHandlers{svc
 func (h *UserHandlers) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	users, total, err := h.svc.ListForAdmin(c.Request.Context(), limit, offset)
 	if err != nil {
 		c.Error(err)

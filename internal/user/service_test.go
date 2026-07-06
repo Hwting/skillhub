@@ -33,6 +33,14 @@ func (m *mockRepo) GetByEmail(ctx context.Context, email string) (*User, error) 
 	}
 	return nil, apperr.New("not_found", "user", "not found")
 }
+func (m *mockRepo) GetByUsername(ctx context.Context, username string) (*User, error) {
+	for _, u := range m.users {
+		if u.Username == username {
+			return u, nil
+		}
+	}
+	return nil, apperr.New("not_found", "user", "not found")
+}
 func (m *mockRepo) List(ctx context.Context, limit, offset int) ([]User, int64, error) {
 	return nil, 0, nil
 }

@@ -128,5 +128,8 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("auth.cookie_samesite must be strict|lax|none, got %q", c.Auth.CookieSameSite)
 	}
+	if c.Auth.CookieSameSite == "none" && !c.Auth.CookieSecure {
+		return fmt.Errorf("auth.cookie_secure must be true when cookie_samesite is none")
+	}
 	return nil
 }

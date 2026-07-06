@@ -20,6 +20,19 @@ func NewService(repo Repo, audit *audit.Logger) *Service {
 	return &Service{repo: repo, audit: audit}
 }
 
+// dummyHash is a pre-computed argon2id hash used to equalize login timing on
+// the not_found branch so that an attacker cannot distinguish "user not found"
+// from "bad password" by response latency.
+var dummyHash = func() string {
+	h, err := pw.Hash("dummy-password-timing-equalizer")
+	if err != nil {
+		// Fallback to a syntactically valid argon2id encoded string; Verify
+		// against it will simply return false, which is all we need.
+		return "$argon2id$v=19$m=65536,t=3,p=2$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	}
+	return h
+}()
+
 func validEmail(e string) bool {
 	return strings.Contains(e, "@") && len(e) >= 3
 }
@@ -44,6 +57,11 @@ func (s *Service) Register(ctx context.Context, email, username, password string
 	}
 	u := &User{Email: email, Username: username, PasswordHash: hash, Role: RoleUser, Status: StatusActive}
 	if err := s.repo.Create(ctx, u); err != nil {
+		// Create failed: detect a username unique-constraint conflict (email is
+		// pre-checked above) and surface it as validation_failed per spec §7.
+		if _,ByUsernameErr := s.repo.GetByUsername(ctx, username); ByUsernameErr == nil {
+			return nil, apperr.New("validation_failed", "user", "username already taken")
+		}
 		return nil, err
 	}
 	s.audit.Log(ctx, audit.Entry{Action: audit.ActionRegister, TargetType: "user", TargetID: u.ID.String(), Metadata: map[string]any{"email": email}})
@@ -54,6 +72,10 @@ func (s *Service) Login(ctx context.Context, email, password, ip, ua string) (*U
 	email = strings.TrimSpace(strings.ToLower(email))
 	u, err := s.repo.GetByEmail(ctx, email)
 	if err != nil {
+		// Equalize timing with the bad_password branch by running a dummy argon2
+		// verification, so all three failure paths take ~equal time and an
+		// attacker cannot enumerate valid emails by latency.
+		_, _ = pw.Verify(password, dummyHash)
 		s.audit.Log(ctx, audit.Entry{Action: audit.ActionLoginFailure, TargetType: "user", IP: ip, UserAgent: ua, Metadata: map[string]any{"email": email, "reason": "not_found"}})
 		return nil, apperr.New("unauthorized", "auth", "invalid credentials")
 	}

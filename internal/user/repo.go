@@ -14,6 +14,7 @@ type Repo interface {
 	Create(ctx context.Context, u *User) error
 	GetByID(ctx context.Context, id uuid.UUID) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetByUsername(ctx context.Context, username string) (*User, error)
 	List(ctx context.Context, limit, offset int) ([]User, int64, error)
 	UpdateRole(ctx context.Context, id uuid.UUID, role string) error
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) error
@@ -49,6 +50,17 @@ func (r *repo) GetByEmail(ctx context.Context, email string) (*User, error) {
 			return nil, apperr.New("not_found", "user", "user not found")
 		}
 		return nil, fmt.Errorf("get user by email: %w", err)
+	}
+	return &u, nil
+}
+
+func (r *repo) GetByUsername(ctx context.Context, username string) (*User, error) {
+	var u User
+	if err := r.db.WithContext(ctx).First(&u, "username = ?", username).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperr.New("not_found", "user", "user not found")
+		}
+		return nil, fmt.Errorf("get user by username: %w", err)
 	}
 	return &u, nil
 }

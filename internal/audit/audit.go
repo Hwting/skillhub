@@ -75,13 +75,17 @@ func (l *Logger) Log(ctx context.Context, e Entry) error {
 		Metadata:    meta,
 	}
 	// 异步写：失败不阻塞主流程，仅记日志
+	// Decouple from the request context: once the handler returns the request
+	// ctx is cancelled, which would abort an in-flight DB write. Use a
+	// non-cancellable context so the audit row is persisted.
+	bgCtx := context.WithoutCancel(ctx)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				l.logger.Error("audit log panic", zap.Any("panic", r))
 			}
 		}()
-		if err := l.db.WithContext(ctx).Create(&row).Error; err != nil {
+		if err := l.db.WithContext(bgCtx).Create(&row).Error; err != nil {
 			l.logger.Error("audit log write failed", zap.Error(err), zap.String("action", string(e.Action)))
 		}
 	}()
