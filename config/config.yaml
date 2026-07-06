@@ -8,7 +8,7 @@ db:
   port: 5432
   name: skillhub
   user: skillhub
-  password: ""
+  password: skillhub
   sslmode: disable
   max_open: 25
   max_idle: 5
