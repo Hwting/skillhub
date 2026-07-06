@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/skillhub/skillhub/internal/apperr"
 	"github.com/skillhub/skillhub/internal/audit"
-	"github.com/skillhub/skillhub/internal/auth"
+	pw "github.com/skillhub/skillhub/internal/password"
 )
 
 type Service struct {
@@ -38,7 +38,7 @@ func (s *Service) Register(ctx context.Context, email, username, password string
 	if _, err := s.repo.GetByEmail(ctx, email); err == nil {
 		return nil, apperr.New("validation_failed", "user", "email already registered")
 	}
-	hash, err := auth.HashPassword(password)
+	hash, err := pw.Hash(password)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
@@ -57,7 +57,7 @@ func (s *Service) Login(ctx context.Context, email, password, ip, ua string) (*U
 		s.audit.Log(ctx, audit.Entry{Action: audit.ActionLoginFailure, TargetType: "user", IP: ip, UserAgent: ua, Metadata: map[string]any{"email": email, "reason": "not_found"}})
 		return nil, apperr.New("unauthorized", "auth", "invalid credentials")
 	}
-	ok, err := auth.VerifyPassword(password, u.PasswordHash)
+	ok, err := pw.Verify(password, u.PasswordHash)
 	if err != nil || !ok {
 		s.audit.Log(ctx, audit.Entry{ActorUserID: &u.ID, Action: audit.ActionLoginFailure, TargetType: "user", TargetID: u.ID.String(), IP: ip, UserAgent: ua, Metadata: map[string]any{"reason": "bad_password"}})
 		return nil, apperr.New("unauthorized", "auth", "invalid credentials")

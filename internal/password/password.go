@@ -1,4 +1,4 @@
-package auth
+package password
 
 import (
 	"crypto/rand"
@@ -19,7 +19,7 @@ const (
 	saltLen      = 16
 )
 
-func HashPassword(plain string) (string, error) {
+func Hash(plain string) (string, error) {
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("gen salt: %w", err)
@@ -32,7 +32,7 @@ func HashPassword(plain string) (string, error) {
 	), nil
 }
 
-func VerifyPassword(plain, encoded string) (bool, error) {
+func Verify(plain, encoded string) (bool, error) {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false, errors.New("invalid hash format")

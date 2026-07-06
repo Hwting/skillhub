@@ -1,15 +1,15 @@
-package auth
+package password
 
 import (
 	"testing"
 )
 
 func TestHashVerify_RoundTrip(t *testing.T) {
-	encoded, err := HashPassword("hunter2")
+	encoded, err := Hash("hunter2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ok, err := VerifyPassword("hunter2", encoded)
+	ok, err := Verify("hunter2", encoded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,8 +19,8 @@ func TestHashVerify_RoundTrip(t *testing.T) {
 }
 
 func TestVerify_WrongPassword(t *testing.T) {
-	encoded, _ := HashPassword("hunter2")
-	ok, err := VerifyPassword("wrong", encoded)
+	encoded, _ := Hash("hunter2")
+	ok, err := Verify("wrong", encoded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestVerify_WrongPassword(t *testing.T) {
 }
 
 func TestVerify_InvalidEncoded(t *testing.T) {
-	_, err := VerifyPassword("x", "not-a-valid-hash")
+	_, err := Verify("x", "not-a-valid-hash")
 	if err == nil {
 		t.Fatal("expected error")
 	}
