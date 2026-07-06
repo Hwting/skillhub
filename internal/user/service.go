@@ -89,3 +89,11 @@ func (s *Service) Disable(ctx context.Context, actorID, targetID uuid.UUID, ip, 
 	s.audit.Log(ctx, audit.Entry{ActorUserID: &actorID, Action: audit.ActionUserDisabled, TargetType: "user", TargetID: targetID.String(), IP: ip, UserAgent: ua})
 	return nil
 }
+
+func (s *Service) ListForAdmin(ctx context.Context, limit, offset int) ([]User, int64, error) {
+	return s.repo.List(ctx, limit, offset)
+}
+
+func (s *Service) GetForAdmin(ctx context.Context, id uuid.UUID) (*User, error) {
+	return s.repo.GetByID(ctx, id)
+}

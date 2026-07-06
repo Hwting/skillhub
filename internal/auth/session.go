@@ -82,3 +82,5 @@ func (sm *SessionManager) ClearCookie(c *gin.Context) {
 	c.SetSameSite(sm.sameSite())
 	c.SetCookie(sm.cookieCfg.CookieName, "", -1, "/", sm.cookieCfg.CookieDomain, sm.cookieCfg.CookieSecure, true)
 }
+
+func (sm *SessionManager) CookieName() string { return sm.cookieCfg.CookieName }
