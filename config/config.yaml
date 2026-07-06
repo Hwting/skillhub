@@ -1,0 +1,32 @@
+server:
+  addr: ":8080"
+  read_timeout: 15s
+  write_timeout: 15s
+  shutdown_timeout: 10s
+db:
+  host: localhost
+  port: 5432
+  name: skillhub
+  user: skillhub
+  password: ""
+  sslmode: disable
+  max_open: 25
+  max_idle: 5
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+storage:
+  driver: local
+  local:
+    root: ./var/storage
+  s3:
+    endpoint: localhost:9000
+    bucket: skillhub
+    region: us-east-1
+    access_key: ""
+    secret_key: ""
+    use_ssl: false
+log:
+  level: info
+  format: json
