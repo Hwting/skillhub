@@ -39,6 +39,12 @@ storage:
 log:
   level: info
   format: json
+auth:
+  session_ttl: 24h
+  cookie_name: sid
+  cookie_secure: false
+  cookie_domain: ""
+  cookie_samesite: lax
 `
 
 func writeTemp(t *testing.T, content string) string {
@@ -78,6 +84,22 @@ func TestValidate_MissingServerAddr(t *testing.T) {
 func TestValidate_InvalidStorageDriver(t *testing.T) {
 	c, _ := Load(writeTemp(t, validYAML))
 	c.Storage.Driver = "ftp"
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestValidate_InvalidSameSite(t *testing.T) {
+	c, _ := Load(writeTemp(t, validYAML))
+	c.Auth.CookieSameSite = "bogus"
+	if err := c.Validate(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestValidate_MissingCookieName(t *testing.T) {
+	c, _ := Load(writeTemp(t, validYAML))
+	c.Auth.CookieName = ""
 	if err := c.Validate(); err == nil {
 		t.Fatal("expected error")
 	}

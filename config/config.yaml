@@ -30,3 +30,9 @@ storage:
 log:
   level: info
   format: json
+auth:
+  session_ttl: 24h
+  cookie_name: sid
+  cookie_secure: false
+  cookie_domain: ""
+  cookie_samesite: lax
