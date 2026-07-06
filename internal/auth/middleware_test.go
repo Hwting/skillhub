@@ -46,3 +46,12 @@ func TestCurrentUser_Missing(t *testing.T) {
 
 // 触发 uuid 引用避免未使用
 var _ = uuid.Nil
+
+func TestCurrentTeam_Missing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/", nil)
+	if _, ok := CurrentTeam(c); ok {
+		t.Fatal("expected no current team")
+	}
+}
