@@ -11,7 +11,8 @@ migrate-down:
 
 migrate-create:
 	@test -n "$(NAME)" || (echo "Usage: make migrate-create NAME=foo" && exit 1)
-	go run ./cmd/migrate create $(NAME)
+	@command -v migrate >/dev/null 2>&1 || (echo "install: go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest" && exit 1)
+	migrate -path migrations -database "postgres://skillhub:skillhub@localhost:5432/skillhub?sslmode=disable" create $(NAME)
 
 test:
 	go test ./...
