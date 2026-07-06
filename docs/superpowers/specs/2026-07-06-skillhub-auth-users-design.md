@@ -68,11 +68,15 @@ session 不入库，只存 Redis。
 
 ## 4. 组件设计
 
-### 4.1 internal/auth
-**password.go**
-- `HashPassword(plain string) (string, error)` — argon2id，输出 `$argon2id$v=19$m=65536,t=3,p=2$<salt_b64>$<hash_b64>` 标准编码。
-- `VerifyPassword(plain, encoded string) (bool, error)` — 解析编码、重算、常量时间比较。
+### 4.1 internal/password
+**password.go**（独立叶子包，避免 internal/auth ↔ internal/user 循环依赖）
+- `Hash(plain string) (string, error)` — argon2id，输出 `$argon2id$v=19$m=65536,t=3,p=2$<salt_b64>$<hash_b64>` 标准编码。
+- `Verify(plain, encoded string) (bool, error)` — 解析编码、重算、常量时间比较。
 - 参数常量：`memory=64*1024, time=3, threads=2, keyLen=32, saltLen=16`。
+
+> 实现说明：原设计将 password 放在 internal/auth，但 auth/middleware 依赖 internal/user（取 current_user），而 user/service 依赖密码哈希，会成环。故 password 提取为无依赖的 internal/password 包。
+
+### 4.1b internal/auth
 
 **session.go**
 - `SessionManager` 持有 `*redis.Client`、sessionTTL、cookie 配置。
