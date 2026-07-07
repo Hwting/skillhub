@@ -11,6 +11,7 @@ import (
 	"github.com/skillhub/skillhub/internal/log"
 	redispkg "github.com/skillhub/skillhub/internal/redis"
 	"github.com/skillhub/skillhub/internal/storage"
+	"github.com/skillhub/skillhub/internal/team"
 	"github.com/skillhub/skillhub/internal/user"
 	"go.uber.org/zap"
 )
@@ -40,6 +41,8 @@ func main() {
 	auditLogger := audit.NewLogger(gdb, logger)
 	userRepo := user.NewRepo(gdb)
 	userSvc := user.NewService(userRepo, auditLogger)
+	teamRepo := team.NewRepo(gdb)
+	teamSvc := team.NewService(teamRepo, auditLogger)
 	sessionMgr := auth.NewSessionManager(rdb, cfg.Auth)
 
 	engine := httpserver.New(httpserver.Deps{
@@ -50,6 +53,7 @@ func main() {
 		UserSvc:    userSvc,
 		SessionMgr: sessionMgr,
 		UserRepo:   userRepo,
+		TeamSvc:    teamSvc,
 	})
 	srv := &http.Server{
 		Addr:         cfg.Server.Addr,

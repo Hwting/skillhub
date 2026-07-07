@@ -133,9 +133,15 @@ func (s *Service) TransferOwnership(ctx context.Context, actorID, teamID, newOwn
 	if err := s.repo.TransferOwnership(ctx, teamID, newOwnerID); err != nil {
 		return err
 	}
-	// 旧 owner 降为 admin
 	if actorID != newOwnerID {
-		_ = s.repo.UpdateMemberRole(ctx, teamID, actorID, RoleAdmin)
+		// 旧 owner 不在 team_members（owner 由 owner_user_id 表示），降为 admin 成员
+		if _, err := s.repo.GetMember(ctx, teamID, actorID); err == nil {
+			_ = s.repo.UpdateMemberRole(ctx, teamID, actorID, RoleAdmin)
+		} else {
+			_ = s.repo.AddMember(ctx, TeamMember{TeamID: teamID, UserID: actorID, Role: RoleAdmin})
+		}
+		// 新 owner 不再保留 member 行，避免 ListMembers 重复显示
+		_ = s.repo.RemoveMember(ctx, teamID, newOwnerID)
 	}
 	_ = s.audit.Log(ctx, audit.Entry{ActorUserID: &actorID, Action: audit.Action("ownership_transferred"), TargetType: "team", TargetID: teamID.String(), Metadata: map[string]any{"new_owner": newOwnerID.String()}})
 	return nil
