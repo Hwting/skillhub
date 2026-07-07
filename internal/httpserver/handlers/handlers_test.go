@@ -18,6 +18,8 @@ import (
 	"github.com/skillhub/skillhub/internal/httpserver"
 	"github.com/skillhub/skillhub/internal/password"
 	redispkg "github.com/skillhub/skillhub/internal/redis"
+	"github.com/skillhub/skillhub/internal/skill"
+	"github.com/skillhub/skillhub/internal/storage"
 	"github.com/skillhub/skillhub/internal/team"
 	"github.com/skillhub/skillhub/internal/user"
 	"go.uber.org/zap"
@@ -33,19 +35,25 @@ func setupApp(t *testing.T) *gin.Engine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gdb.Exec("TRUNCATE users RESTART IDENTITY CASCADE")
+	gdb.Exec("TRUNCATE skill_versions, skills, team_members, users RESTART IDENTITY CASCADE")
 	rdb, _ := redispkg.New(cfg.Redis)
 	rdb.FlushDB(context.Background())
+	store, err := storage.New(cfg.Storage)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	auditLogger := audit.NewLogger(gdb, zap.NewNop())
 	userRepo := user.NewRepo(gdb)
 	userSvc := user.NewService(userRepo, auditLogger)
 	teamRepo := team.NewRepo(gdb)
 	teamSvc := team.NewService(teamRepo, auditLogger)
+	skillRepo := skill.NewRepo(gdb)
+	skillSvc := skill.NewService(skillRepo, store, auditLogger)
 	sessionMgr := auth.NewSessionManager(rdb, cfg.Auth)
 	return httpserver.New(httpserver.Deps{
-		Logger: zap.NewNop(), DB: gdb, Redis: rdb,
-		UserSvc: userSvc, SessionMgr: sessionMgr, UserRepo: userRepo, TeamSvc: teamSvc,
+		Logger: zap.NewNop(), DB: gdb, Redis: rdb, Storage: store,
+		UserSvc: userSvc, SessionMgr: sessionMgr, UserRepo: userRepo, TeamSvc: teamSvc, SkillSvc: skillSvc,
 	})
 }
 

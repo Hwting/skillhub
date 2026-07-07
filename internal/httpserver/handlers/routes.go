@@ -3,11 +3,12 @@ package handlers
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/skillhub/skillhub/internal/auth"
+	"github.com/skillhub/skillhub/internal/skill"
 	"github.com/skillhub/skillhub/internal/team"
 	"github.com/skillhub/skillhub/internal/user"
 )
 
-func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRepo user.Repo, teamSvc *team.Service) {
+func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRepo user.Repo, teamSvc *team.Service, skillSvc *skill.Service) {
 	authH := NewAuthHandlers(svc, sm)
 	userH := NewUserHandlers(svc)
 
@@ -45,5 +46,15 @@ func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRep
 		teamGroup.PATCH("/members/:uid", auth.TeamScoped(teamSvc, "owner"), teamH.PatchMember)
 		teamGroup.DELETE("/members/:uid", auth.TeamScoped(teamSvc, "admin"), teamH.RemoveMember)
 		teamGroup.POST("/transfer", auth.TeamScoped(teamSvc, "owner"), teamH.Transfer)
+	}
+
+	skillH := NewSkillHandlers(skillSvc, teamSvc)
+	skillGroup := r.Group("/teams/:slug/skills")
+	skillGroup.Use(auth.AuthRequired(sm, userRepo))
+	{
+		skillGroup.GET("", auth.TeamScoped(teamSvc, "member"), skillH.ListSkills)
+		skillGroup.GET("/:name", auth.TeamScoped(teamSvc, "member"), skillH.GetSkill)
+		skillGroup.POST("/:name/versions/:version", auth.TeamScoped(teamSvc, "member"), skillH.Publish)
+		skillGroup.GET("/:name/versions/:version", auth.TeamScoped(teamSvc, "member"), skillH.Download)
 	}
 }

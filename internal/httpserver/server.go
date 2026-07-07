@@ -13,6 +13,7 @@ import (
 	"github.com/skillhub/skillhub/internal/httpserver/handlers"
 	"github.com/skillhub/skillhub/internal/httpserver/middleware"
 	redispkg "github.com/skillhub/skillhub/internal/redis"
+	"github.com/skillhub/skillhub/internal/skill"
 	"github.com/skillhub/skillhub/internal/storage"
 	"github.com/skillhub/skillhub/internal/team"
 	"github.com/skillhub/skillhub/internal/user"
@@ -31,6 +32,7 @@ type Deps struct {
 	SessionMgr *auth.SessionManager
 	UserRepo   user.Repo
 	TeamSvc    *team.Service
+	SkillSvc   *skill.Service
 }
 
 func New(deps Deps) *gin.Engine {
@@ -38,8 +40,8 @@ func New(deps Deps) *gin.Engine {
 	r := gin.New()
 	r.Use(middleware.RequestID(), middleware.Recover(deps.Logger), middleware.AccessLog(deps.Logger), middleware.Errors())
 	r.GET("/healthz", healthz(deps))
-	if deps.UserSvc != nil && deps.SessionMgr != nil && deps.UserRepo != nil && deps.TeamSvc != nil {
-		handlers.Register(r, deps.UserSvc, deps.SessionMgr, deps.UserRepo, deps.TeamSvc)
+	if deps.UserSvc != nil && deps.SessionMgr != nil && deps.UserRepo != nil && deps.TeamSvc != nil && deps.SkillSvc != nil {
+		handlers.Register(r, deps.UserSvc, deps.SessionMgr, deps.UserRepo, deps.TeamSvc, deps.SkillSvc)
 	}
 	return r
 }
