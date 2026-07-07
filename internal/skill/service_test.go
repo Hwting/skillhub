@@ -1,0 +1,185 @@
+package skill
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"sort"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/skillhub/skillhub/internal/apperr"
+	"github.com/skillhub/skillhub/internal/audit"
+	"github.com/skillhub/skillhub/internal/storage"
+	"go.uber.org/zap"
+)
+
+type memStore struct{ objs map[string][]byte }
+
+func newMemStore() *memStore { return &memStore{objs: map[string][]byte{}} }
+
+func (m *memStore) Put(ctx context.Context, key string, r io.Reader, size int64, ct string) (string, error) {
+	b, _ := io.ReadAll(r)
+	m.objs[key] = b
+	return key, nil
+}
+func (m *memStore) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	b, ok := m.objs[key]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
+}
+func (m *memStore) Delete(ctx context.Context, key string) error { delete(m.objs, key); return nil }
+func (m *memStore) Stat(ctx context.Context, key string) (storage.ObjectInfo, error) {
+	return storage.ObjectInfo{}, nil
+}
+
+type mockSkillRepo struct {
+	skills   map[uuid.UUID]*Skill
+	versions map[uuid.UUID][]SkillVersion
+}
+
+func newMockSkillRepo() *mockSkillRepo {
+	return &mockSkillRepo{skills: map[uuid.UUID]*Skill{}, versions: map[uuid.UUID][]SkillVersion{}}
+}
+
+func (m *mockSkillRepo) CreateSkill(ctx context.Context, s *Skill) error {
+	for _, e := range m.skills {
+		if e.TeamID == s.TeamID && e.Name == s.Name {
+			return apperr.New("conflict", "skill", "skill already exists")
+		}
+	}
+	s.ID = uuid.New()
+	m.skills[s.ID] = s
+	return nil
+}
+func (m *mockSkillRepo) GetSkill(ctx context.Context, teamID uuid.UUID, name string) (*Skill, error) {
+	for _, e := range m.skills {
+		if e.TeamID == teamID && e.Name == name {
+			return e, nil
+		}
+	}
+	return nil, apperr.New("not_found", "skill", "skill not found")
+}
+func (m *mockSkillRepo) ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) ([]Skill, error) {
+	var out []Skill
+	for _, e := range m.skills {
+		if e.TeamID == teamID {
+			out = append(out, *e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+func (m *mockSkillRepo) CreateVersion(ctx context.Context, v *SkillVersion) error {
+	for _, e := range m.versions[v.SkillID] {
+		if e.Version == v.Version {
+			return apperr.New("conflict", "skill", "version already exists")
+		}
+	}
+	v.ID = uuid.New()
+	m.versions[v.SkillID] = append(m.versions[v.SkillID], *v)
+	return nil
+}
+func (m *mockSkillRepo) GetVersion(ctx context.Context, skillID uuid.UUID, version string) (*SkillVersion, error) {
+	for _, e := range m.versions[skillID] {
+		if e.Version == version {
+			v := e
+			return &v, nil
+		}
+	}
+	return nil, apperr.New("not_found", "skill", "version not found")
+}
+func (m *mockSkillRepo) ListVersions(ctx context.Context, skillID uuid.UUID) ([]SkillVersion, error) {
+	out := make([]SkillVersion, len(m.versions[skillID]))
+	copy(out, m.versions[skillID])
+	return out, nil
+}
+
+func newSkillSvc() (*Service, *mockSkillRepo, *memStore) {
+	r := newMockSkillRepo()
+	st := newMemStore()
+	return NewService(r, st, audit.NewLogger(nil, zap.NewNop())), r, st
+}
+
+func TestPublish_NewSkillAndVersion(t *testing.T) {
+	s, r, st := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	body := bytes.NewReader([]byte("tarball"))
+	sv, err := s.Publish(ctx, tid, "my-skill", "1.0.0", body, 7, ContentTypeTarball, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sv.Sha256 == "" {
+		t.Fatal("sha empty")
+	}
+	if len(r.versions[sv.SkillID]) != 1 {
+		t.Fatal("version not stored")
+	}
+	if _, ok := st.objs[sv.StorageKey]; !ok {
+		t.Fatal("object not stored")
+	}
+}
+
+func TestPublish_DuplicateVersion_Conflict(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	_, _ = s.Publish(ctx, tid, "my-skill", "1.0.0", bytes.NewReader([]byte("payload")), 7, ContentTypeTarball, pub)
+	_, err := s.Publish(ctx, tid, "my-skill", "1.0.0", bytes.NewReader([]byte("payload")), 7, ContentTypeTarball, pub)
+	if err == nil {
+		t.Fatal("expected conflict")
+	}
+	e, ok := err.(*apperr.Error)
+	if !ok || e.Code != "conflict" {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+	// 原版本对象必须完好：仍可下载
+	rc, _, err := s.OpenVersion(ctx, tid, "my-skill", "1.0.0")
+	if err != nil {
+		t.Fatalf("download after duplicate: %v", err)
+	}
+	defer rc.Close()
+	b, _ := io.ReadAll(rc)
+	if string(b) != "payload" {
+		t.Fatalf("corrupted payload: %q", b)
+	}
+}
+
+func TestPublish_InvalidNameOrVersion(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	if _, err := s.Publish(ctx, tid, "BadName", "1.0.0", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub); err == nil {
+		t.Fatal("expected invalid name")
+	}
+	if _, err := s.Publish(ctx, tid, "ok", "not-semver", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub); err == nil {
+		t.Fatal("expected invalid version")
+	}
+}
+
+func TestOpenVersion(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	_, _ = s.Publish(ctx, tid, "my-skill", "1.0.0", bytes.NewReader([]byte("payload")), 7, ContentTypeTarball, pub)
+	rc, sv, err := s.OpenVersion(ctx, tid, "my-skill", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	b, _ := io.ReadAll(rc)
+	if string(b) != "payload" {
+		t.Fatalf("got %q", b)
+	}
+	if sv.Size != 7 {
+		t.Fatalf("size=%d", sv.Size)
+	}
+}

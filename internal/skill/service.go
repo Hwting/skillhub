@@ -1,0 +1,135 @@
+package skill
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"sort"
+
+	"github.com/google/uuid"
+	"github.com/skillhub/skillhub/internal/apperr"
+	"github.com/skillhub/skillhub/internal/audit"
+	"github.com/skillhub/skillhub/internal/storage"
+)
+
+type Service struct {
+	repo  Repo
+	store storage.Store
+	audit *audit.Logger
+}
+
+func NewService(repo Repo, store storage.Store, audit *audit.Logger) *Service {
+	return &Service{repo: repo, store: store, audit: audit}
+}
+
+// Repo exposes the underlying repository for read-only lookups in handlers.
+func (s *Service) Repo() Repo { return s.repo }
+
+// Publish stores a new immutable version of a skill. Creates the skill row
+// on first publish. Returns conflict (409) if the version already exists;
+// on that or any DB failure after the object was uploaded, the orphan
+// storage object is deleted.
+func (s *Service) Publish(ctx context.Context, teamID uuid.UUID, name, version string, r io.Reader, size int64, contentType string, publisherID uuid.UUID) (*SkillVersion, error) {
+	if !IsValidName(name) {
+		return nil, apperr.New("validation_failed", "skill", "invalid skill name")
+	}
+	if !IsValid(version) {
+		return nil, apperr.New("validation_failed", "skill", "invalid version")
+	}
+	if size < 0 || size > MaxPackageSize {
+		return nil, apperr.New("validation_failed", "skill", "package too large")
+	}
+	buf := &bytes.Buffer{}
+	if _, err := io.Copy(buf, r); err != nil {
+		return nil, apperr.New("validation_failed", "skill", "read body failed")
+	}
+	if int64(buf.Len()) > MaxPackageSize {
+		return nil, apperr.New("validation_failed", "skill", "package too large")
+	}
+	sum := sha256.Sum256(buf.Bytes())
+	sha := hex.EncodeToString(sum[:])
+
+	// 找或建 skill
+	sk, err := s.repo.GetSkill(ctx, teamID, name)
+	if err != nil {
+		if !isNotFound(err) {
+			return nil, err
+		}
+		sk = &Skill{TeamID: teamID, Name: name}
+		if err := s.repo.CreateSkill(ctx, sk); err != nil {
+			return nil, err
+		}
+		_ = s.audit.Log(ctx, audit.Entry{ActorUserID: &publisherID, Action: audit.Action("skill_created"), TargetType: "skill", TargetID: sk.ID.String(), Metadata: map[string]any{"name": name, "team_id": teamID.String()}})
+	}
+	key := fmt.Sprintf("skills/%s/%s/%s.tar.gz", sk.ID.String(), version, sha)
+	if _, err := s.store.Put(ctx, key, bytes.NewReader(buf.Bytes()), int64(buf.Len()), contentType); err != nil {
+		return nil, fmt.Errorf("store put: %w", err)
+	}
+	sv := &SkillVersion{
+		SkillID:         sk.ID,
+		Version:         version,
+		StorageKey:      key,
+		Size:            int64(buf.Len()),
+		Sha256:          sha,
+		ContentType:     contentType,
+		PublisherUserID: publisherID,
+	}
+	if err := s.repo.CreateVersion(ctx, sv); err != nil {
+		// 仅在非 conflict 时清理：conflict 意味着该 version 已存在，其对象
+		// 可能与我们刚写入的 key 相同（同内容），删除会破坏既有版本。
+		if !isConflict(err) {
+			_ = s.store.Delete(ctx, key)
+		}
+		return nil, err
+	}
+	_ = s.audit.Log(ctx, audit.Entry{ActorUserID: &publisherID, Action: audit.Action("skill_version_published"), TargetType: "skill_version", TargetID: sv.ID.String(), Metadata: map[string]any{"skill_id": sk.ID.String(), "version": version, "sha256": sha}})
+	return sv, nil
+}
+
+func (s *Service) GetSkillWithVersions(ctx context.Context, teamID uuid.UUID, name string) (*Skill, []SkillVersion, error) {
+	sk, err := s.repo.GetSkill(ctx, teamID, name)
+	if err != nil {
+		return nil, nil, err
+	}
+	vs, err := s.repo.ListVersions(ctx, sk.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	sort.Slice(vs, func(i, j int) bool { return Compare(vs[i].Version, vs[j].Version) > 0 })
+	return sk, vs, nil
+}
+
+func (s *Service) ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) ([]Skill, error) {
+	return s.repo.ListSkillsByTeam(ctx, teamID)
+}
+
+// OpenVersion returns a stream over the stored tarball plus its metadata.
+// Caller must close the stream.
+func (s *Service) OpenVersion(ctx context.Context, teamID uuid.UUID, name, version string) (io.ReadCloser, *SkillVersion, error) {
+	sk, err := s.repo.GetSkill(ctx, teamID, name)
+	if err != nil {
+		return nil, nil, err
+	}
+	sv, err := s.repo.GetVersion(ctx, sk.ID, version)
+	if err != nil {
+		return nil, nil, err
+	}
+	rc, err := s.store.Get(ctx, sv.StorageKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("store get: %w", err)
+	}
+	return rc, sv, nil
+}
+
+func isNotFound(err error) bool {
+	e, ok := err.(*apperr.Error)
+	return ok && e.Code == "not_found"
+}
+
+func isConflict(err error) bool {
+	e, ok := err.(*apperr.Error)
+	return ok && e.Code == "conflict"
+}
