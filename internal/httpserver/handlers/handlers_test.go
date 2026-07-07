@@ -18,6 +18,7 @@ import (
 	"github.com/skillhub/skillhub/internal/httpserver"
 	"github.com/skillhub/skillhub/internal/password"
 	redispkg "github.com/skillhub/skillhub/internal/redis"
+	"github.com/skillhub/skillhub/internal/team"
 	"github.com/skillhub/skillhub/internal/user"
 	"go.uber.org/zap"
 )
@@ -39,10 +40,12 @@ func setupApp(t *testing.T) *gin.Engine {
 	auditLogger := audit.NewLogger(gdb, zap.NewNop())
 	userRepo := user.NewRepo(gdb)
 	userSvc := user.NewService(userRepo, auditLogger)
+	teamRepo := team.NewRepo(gdb)
+	teamSvc := team.NewService(teamRepo, auditLogger)
 	sessionMgr := auth.NewSessionManager(rdb, cfg.Auth)
 	return httpserver.New(httpserver.Deps{
 		Logger: zap.NewNop(), DB: gdb, Redis: rdb,
-		UserSvc: userSvc, SessionMgr: sessionMgr, UserRepo: userRepo,
+		UserSvc: userSvc, SessionMgr: sessionMgr, UserRepo: userRepo, TeamSvc: teamSvc,
 	})
 }
 
