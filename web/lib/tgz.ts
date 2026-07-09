@@ -63,3 +63,29 @@ function commonDir(names: string[]): string {
   }
   return prefix;
 }
+
+// --- shared publish payload builder (used by /publish page and publish dialog) ---
+
+export type PackageMode = "files" | "tarball";
+
+export interface PackageSelection {
+  mode: PackageMode;
+  files: File[] | null;
+  tarball: File | null;
+}
+
+// Build the request body from a user selection: either pack selected files/dir
+// into a tar.gz client-side, or pass through a pre-packaged .tar.gz. Throws a
+// user-facing Error message if the selection is empty.
+export async function buildPackageBody(sel: PackageSelection): Promise<ArrayBuffer> {
+  if (sel.mode === "files") {
+    if (!sel.files || sel.files.length === 0) {
+      throw new Error("请选择 skill 文件或目录");
+    }
+    return createTarGz(sel.files);
+  }
+  if (!sel.tarball) {
+    throw new Error("请选择一个 .tar.gz 文件");
+  }
+  return sel.tarball.arrayBuffer();
+}
