@@ -1,5 +1,6 @@
 /bin/
 /var/
+/.superpowers
 **/var/
 *.test
 *.out
