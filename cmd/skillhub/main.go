@@ -10,6 +10,7 @@ import (
 	"github.com/skillhub/skillhub/internal/httpserver"
 	"github.com/skillhub/skillhub/internal/log"
 	redispkg "github.com/skillhub/skillhub/internal/redis"
+	"github.com/skillhub/skillhub/internal/skill"
 	"github.com/skillhub/skillhub/internal/storage"
 	"github.com/skillhub/skillhub/internal/team"
 	"github.com/skillhub/skillhub/internal/user"
@@ -43,6 +44,8 @@ func main() {
 	userSvc := user.NewService(userRepo, auditLogger)
 	teamRepo := team.NewRepo(gdb)
 	teamSvc := team.NewService(teamRepo, auditLogger)
+	skillRepo := skill.NewRepo(gdb)
+	skillSvc := skill.NewService(skillRepo, store, auditLogger)
 	sessionMgr := auth.NewSessionManager(rdb, cfg.Auth)
 
 	engine := httpserver.New(httpserver.Deps{
@@ -54,6 +57,7 @@ func main() {
 		SessionMgr: sessionMgr,
 		UserRepo:   userRepo,
 		TeamSvc:    teamSvc,
+		SkillSvc:   skillSvc,
 	})
 	srv := &http.Server{
 		Addr:         cfg.Server.Addr,

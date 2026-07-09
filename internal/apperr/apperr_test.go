@@ -29,6 +29,7 @@ func TestHTTPStatus(t *testing.T) {
 		{"unauthorized", 401},
 		{"forbidden", 403},
 		{"validation_failed", 422},
+		{"conflict", 409},
 		{"db_ping_failed", 500},
 		{"unknown", 500},
 	}

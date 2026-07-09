@@ -40,6 +40,8 @@ func HTTPStatus(err error) int {
 		return 403
 	case "validation_failed":
 		return 422
+	case "conflict":
+		return 409
 	default:
 		return 500
 	}
