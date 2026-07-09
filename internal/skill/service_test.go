@@ -371,3 +371,100 @@ func TestPromoteToGlobal_InvalidTargetName(t *testing.T) {
 		t.Fatal("expected invalid name")
 	}
 }
+
+func TestStar_Idempotent(t *testing.T) {
+	s, r, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	sv, _ := s.Publish(ctx, tid, "my-skill", "1.0.0", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub)
+	user := uuid.New()
+	if err := s.Star(ctx, user, tid, "my-skill"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Star(ctx, user, tid, "my-skill"); err != nil {
+		t.Fatal(err)
+	}
+	n, _ := r.CountStars(ctx, sv.SkillID)
+	if n != 1 {
+		t.Fatalf("count=%d", n)
+	}
+	if err := s.Unstar(ctx, user, tid, "my-skill"); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = r.CountStars(ctx, sv.SkillID)
+	if n != 0 {
+		t.Fatalf("count=%d", n)
+	}
+}
+
+func TestStar_UnknownSkill(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	if err := s.Star(ctx, uuid.New(), uuid.New(), "nope"); err == nil {
+		t.Fatal("expected not found")
+	}
+}
+
+func TestGetSkillDetail_Fields(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	s.Publish(ctx, tid, "my-skill", "1.0.0", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub)
+	s.Publish(ctx, tid, "my-skill", "1.2.0", bytes.NewReader([]byte("b")), 1, ContentTypeTarball, pub)
+	viewer := uuid.New()
+	s.Star(ctx, viewer, tid, "my-skill")
+	other := uuid.New()
+	s.Star(ctx, other, tid, "my-skill")
+
+	d, err := s.GetSkillDetail(ctx, tid, "my-skill", viewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.StarCount != 2 {
+		t.Fatalf("star_count=%d", d.StarCount)
+	}
+	if !d.IsStarred {
+		t.Fatal("should be starred")
+	}
+	if len(d.Versions) != 2 || d.Versions[0].Version != "1.2.0" {
+		t.Fatalf("versions=%+v", d.Versions)
+	}
+
+	// 未 star 的 viewer
+	d2, _ := s.GetSkillDetail(ctx, tid, "my-skill", uuid.New())
+	if d2.IsStarred {
+		t.Fatal("should not be starred")
+	}
+	if d2.StarCount != 2 {
+		t.Fatalf("star_count=%d", d2.StarCount)
+	}
+}
+
+func TestListMyStars_PaginationClamp(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	user := uuid.New()
+	// page<1 → 1; pageSize>100 → 100; 不报错
+	if _, err := s.ListMyStars(ctx, user, 0, 500); err != nil {
+		t.Fatal(err)
+	}
+	// star 一个 skill 后能列出
+	s.Publish(ctx, tid, "my-skill", "1.0.0", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub)
+	if err := s.Star(ctx, user, tid, "my-skill"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.ListMyStars(ctx, user, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Name != "my-skill" {
+		t.Fatalf("res=%+v", res)
+	}
+	if res[0].LatestVersion == nil || res[0].LatestVersion.Version != "1.0.0" {
+		t.Fatalf("latest=%+v", res[0].LatestVersion)
+	}
+}

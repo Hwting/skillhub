@@ -106,6 +106,88 @@ func (s *Service) ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) ([]Ski
 	return s.repo.ListSkillsByTeam(ctx, teamID)
 }
 
+// SkillDetail is a skill with its versions, star count, and whether the
+// requesting user has starred it — the payload for skill detail views.
+type SkillDetail struct {
+	Skill
+	Versions  []SkillVersion
+	StarCount int64
+	IsStarred bool
+}
+
+// GetSkillDetail returns a skill with its versions (sorted newest semver
+// first), star count, and the viewer's starred state. CountStars/IsStarred
+// errors are ignored (counts are non-critical; 0/false is a safe default).
+func (s *Service) GetSkillDetail(ctx context.Context, teamID uuid.UUID, name string, viewerID uuid.UUID) (*SkillDetail, error) {
+	sk, err := s.repo.GetSkill(ctx, teamID, name)
+	if err != nil {
+		return nil, err
+	}
+	vs, err := s.repo.ListVersions(ctx, sk.ID)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(vs, func(i, j int) bool { return Compare(vs[i].Version, vs[j].Version) > 0 })
+	d := &SkillDetail{Skill: *sk, Versions: vs}
+	if count, err := s.repo.CountStars(ctx, sk.ID); err == nil {
+		d.StarCount = count
+	}
+	if viewerID != uuid.Nil {
+		if starred, err := s.repo.IsStarred(ctx, viewerID, sk.ID); err == nil {
+			d.IsStarred = starred
+		}
+	}
+	return d, nil
+}
+
+// Star records userID's star on the skill identified by (teamID, name).
+func (s *Service) Star(ctx context.Context, userID, teamID uuid.UUID, name string) error {
+	sk, err := s.repo.GetSkill(ctx, teamID, name)
+	if err != nil {
+		return err
+	}
+	return s.repo.Star(ctx, userID, sk.ID)
+}
+
+// Unstar removes userID's star on the skill identified by (teamID, name).
+func (s *Service) Unstar(ctx context.Context, userID, teamID uuid.UUID, name string) error {
+	sk, err := s.repo.GetSkill(ctx, teamID, name)
+	if err != nil {
+		return err
+	}
+	return s.repo.Unstar(ctx, userID, sk.ID)
+}
+
+// ListMyStars returns the skills the user has starred, newest star first, with
+// the latest version attached. page is 1-based; pageSize defaults to 20 and is
+// clamped to 100.
+func (s *Service) ListMyStars(ctx context.Context, userID uuid.UUID, page, pageSize int) ([]SearchResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+	rows, err := s.repo.ListStarredSkills(ctx, userID, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SearchResult, len(rows))
+	for i, row := range rows {
+		out[i] = SearchResult{Skill: row.Skill, TeamSlug: row.TeamSlug}
+		vs, err := s.repo.ListVersions(ctx, row.ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].LatestVersion = latestVersion(vs)
+	}
+	return out, nil
+}
+
 // OpenVersion returns a stream over the stored tarball plus its metadata.
 // Caller must close the stream.
 func (s *Service) OpenVersion(ctx context.Context, teamID uuid.UUID, name, version string) (io.ReadCloser, *SkillVersion, error) {
