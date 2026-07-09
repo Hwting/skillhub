@@ -12,7 +12,7 @@ import { ApiError } from "@/lib/types";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register } = useUser();
+  const { register, login } = useUser();
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -25,6 +25,8 @@ export default function RegisterPage() {
     setSubmitting(true);
     try {
       await register(email, username, password);
+      // /register does not establish a session cookie — log in to get one.
+      await login(email, password);
       router.push("/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "注册失败");
