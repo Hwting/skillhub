@@ -2,6 +2,16 @@
 
 企业级 skill 包管理平台。
 
+## 界面预览
+
+| 登录 | 搜索 |
+| :---: | :---: |
+| ![登录](screenshots/login.png) | ![搜索](screenshots/search.png) |
+
+| 我的 Skills | 发布 |
+| :---: | :---: |
+| ![我的 Skills](screenshots/skills.png) | ![发布](screenshots/publish.png) |
+
 ## 本地开发
 
 ```bash
