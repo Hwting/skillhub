@@ -22,6 +22,9 @@ func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRep
 		authed.GET("/me", authH.Me)
 	}
 
+	skillH := NewSkillHandlers(skillSvc, teamSvc)
+	authed.GET("/skills", skillH.Search)
+
 	admin := r.Group("/admin")
 	admin.Use(auth.AuthRequired(sm, userRepo), auth.RequireRole(user.RolePlatformAdmin))
 	{
@@ -48,7 +51,6 @@ func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRep
 		teamGroup.POST("/transfer", auth.TeamScoped(teamSvc, "owner"), teamH.Transfer)
 	}
 
-	skillH := NewSkillHandlers(skillSvc, teamSvc)
 	skillGroup := r.Group("/teams/:slug/skills")
 	skillGroup.Use(auth.AuthRequired(sm, userRepo))
 	{

@@ -219,3 +219,74 @@ func TestE2E_GlobalDownload_OK(t *testing.T) {
 		t.Fatalf("global download body mismatch: %q", w.Body.String())
 	}
 }
+
+func TestE2E_SkillSearch_Visibility(t *testing.T) {
+	r := setupTeamApp(t)
+	owner := registerAndLogin(t, r, "owner@x.com", "password1")
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("POST", "/teams", owner, `{"slug":"acme","name":"Acme"}`))
+	publishSkill(t, r, owner, "acme", "go-lint", "1.0.0", []byte("a"))
+	publishSkill(t, r, owner, "acme", "go-format", "1.0.0", []byte("b"))
+
+	// owner 搜 "lint"：应见到 acme/go-lint，不见 go-format
+	w := getWithCookie(t, r, owner, "/skills?q=lint")
+	if w.Code != 200 {
+		t.Fatalf("search: %d %s", w.Code, w.Body.String())
+	}
+	if !contains(w.Body.String(), "go-lint") || contains(w.Body.String(), "go-format") {
+		t.Fatalf("owner search results: %s", w.Body.String())
+	}
+
+	// 非成员 other 搜 "lint"：不应见到 acme 的私有 skill
+	other := registerAndLogin(t, r, "other@x.com", "password1")
+	w = getWithCookie(t, r, other, "/skills?q=lint")
+	if w.Code != 200 {
+		t.Fatalf("search: %d", w.Code)
+	}
+	if contains(w.Body.String(), "go-lint") {
+		t.Fatalf("private skill leaked to non-member: %s", w.Body.String())
+	}
+}
+
+func TestE2E_SkillSearch_GlobalVisible(t *testing.T) {
+	r := setupTeamApp(t)
+	cfg, err := config.Load("../../../config/config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gdb, err := db.New(cfg.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.New(cfg.Storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var globalID, userID, skillID string
+	gdb.Raw("SELECT id::text FROM teams WHERE slug='global'").Scan(&globalID)
+	gdb.Raw("INSERT INTO users(email,username,password_hash,role,status) VALUES('pub-e@x.com','pube','x','user','active') RETURNING id::text").Scan(&userID)
+	gdb.Raw("INSERT INTO skills(team_id,name) VALUES(?,'global-lint') RETURNING id::text", globalID).Scan(&skillID)
+	payload := []byte("x")
+	sha := sha256Hex(payload)
+	key := "skills/" + skillID + "/1.0.0/" + sha + ".tar.gz"
+	if _, err := store.Put(context.Background(), key, bytes.NewReader(payload), 1, "application/gzip"); err != nil {
+		t.Fatal(err)
+	}
+	if err := gdb.Exec("INSERT INTO skill_versions(skill_id,version,storage_key,size,sha256,content_type,publisher_user_id) VALUES(?,?,?,?,?,?,?)",
+		skillID, "1.0.0", key, 1, sha, "application/gzip", userID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 任意认证用户搜 "lint"：应见到 global-lint
+	u := registerAndLogin(t, r, "searcher@x.com", "password1")
+	w := getWithCookie(t, r, u, "/skills?q=lint")
+	if w.Code != 200 {
+		t.Fatalf("search: %d %s", w.Code, w.Body.String())
+	}
+	if !contains(w.Body.String(), "global-lint") {
+		t.Fatalf("global skill not in results: %s", w.Body.String())
+	}
+	// latest_version 应带回
+	if !contains(w.Body.String(), "1.0.0") {
+		t.Fatalf("latest version missing: %s", w.Body.String())
+	}
+}

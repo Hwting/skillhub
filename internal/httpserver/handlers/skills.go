@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/skillhub/skillhub/internal/apperr"
 	"github.com/skillhub/skillhub/internal/auth"
 	"github.com/skillhub/skillhub/internal/skill"
@@ -124,4 +125,59 @@ func (h *SkillHandlers) Download(c *gin.Context) {
 	c.Header("X-Skillhub-Sha256", sv.Sha256)
 	c.Status(http.StatusOK)
 	_, _ = io.Copy(c.Writer, rc)
+}
+
+type searchResultResp struct {
+	ID            string       `json:"id"`
+	TeamID        string       `json:"team_id"`
+	TeamSlug      string       `json:"team_slug"`
+	Name          string       `json:"name"`
+	LatestVersion *versionResp `json:"latest_version"`
+}
+
+// Search handles GET /skills?q=&page=&page_size= — returns skills visible to
+// the caller (global namespace + teams they own or belong to).
+func (h *SkillHandlers) Search(c *gin.Context) {
+	u, ok := auth.CurrentUser(c)
+	if !ok {
+		c.Error(apperr.New("unauthorized", "auth", "no user"))
+		return
+	}
+	q := c.Query("q")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+
+	ctx := c.Request.Context()
+	// 可见 teamIDs：global + 用户所属团队
+	teamIDs := make([]uuid.UUID, 0, 4)
+	if g, err := h.teamSvc.Repo().GetBySlug(ctx, team.GlobalSlug); err == nil {
+		teamIDs = append(teamIDs, g.ID)
+	}
+	if mine, err := h.teamSvc.Repo().ListForUser(ctx, u.ID); err == nil {
+		for _, t := range mine {
+			teamIDs = append(teamIDs, t.ID)
+		}
+	}
+
+	results, err := h.svc.Search(ctx, teamIDs, q, page, pageSize)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	out := make([]searchResultResp, len(results))
+	for i, r := range results {
+		out[i] = searchResultResp{ID: r.ID.String(), TeamID: r.TeamID.String(), TeamSlug: r.TeamSlug, Name: r.Name}
+		if r.LatestVersion != nil {
+			out[i].LatestVersion = &versionResp{
+				ID:          r.LatestVersion.ID.String(),
+				Version:     r.LatestVersion.Version,
+				Size:        r.LatestVersion.Size,
+				Sha256:      r.LatestVersion.Sha256,
+				ContentType: r.LatestVersion.ContentType,
+				Publisher:   r.LatestVersion.PublisherUserID.String(),
+				CreatedAt:   r.LatestVersion.CreatedAt.Format(timeRFC3339),
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": out, "page": page, "page_size": pageSize})
 }
