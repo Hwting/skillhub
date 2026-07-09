@@ -1,18 +1,26 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is the [Next.js](https://nextjs.org) frontend for SkillHub.
 
 ## Getting Started
 
-First, run the development server:
+Start the Go backend on `:8080` (from repo root):
+
+```bash
+make compose-up && make migrate-up && make run
+```
+
+Then run the dev server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
+
+Open <http://localhost:3000>. Requests to `/api/*` are proxied to the backend.
+
+## Configuration
+
+- `BACKEND_URL` (env, default `http://localhost:8080`): the Go backend origin. The
+  Next.js rewrite maps `/api/:path*` → `${BACKEND_URL}/:path*`, so the `sid` session
+  cookie stays same-origin and no CORS is needed on the backend.
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
