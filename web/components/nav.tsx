@@ -26,6 +26,9 @@ export function Nav() {
               <Link href="/search" className="text-sm text-muted-foreground hover:text-foreground">
                 搜索
               </Link>
+              <Link href="/skills" className="text-sm text-muted-foreground hover:text-foreground">
+                技能管理
+              </Link>
               <Link href="/teams" className="text-sm text-muted-foreground hover:text-foreground">
                 我的团队
               </Link>

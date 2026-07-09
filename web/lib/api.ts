@@ -114,6 +114,25 @@ export const skillApi = {
       headers: { "Content-Type": "application/gzip" },
       body,
     }),
+  // Fetch full detail and project it into a portable manifest (no internal ids).
+  // The caller serializes it to JSON for download.
+  exportManifest: async (slug: string, name: string) => {
+    const d = await apiFetch<SkillDetail>(`/teams/${slug}/skills/${name}`);
+    return {
+      name: d.name,
+      team_slug: slug,
+      star_count: d.star_count,
+      versions: d.versions.map((v) => ({
+        version: v.version,
+        size: v.size,
+        sha256: v.sha256,
+        content_type: v.content_type,
+        published_at: v.created_at,
+      })),
+    };
+  },
 };
+
+export type SkillManifest = Awaited<ReturnType<typeof skillApi.exportManifest>>;
 
 export type { Team, Member, User, SearchResult, SkillSummary, SkillDetail, Version };

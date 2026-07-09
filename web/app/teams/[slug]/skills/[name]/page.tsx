@@ -10,6 +10,7 @@ import { StarButton } from "@/components/star-button";
 import { PublishDialog } from "@/components/publish-dialog";
 import { skillApi } from "@/lib/api";
 import { ApiError, type SkillDetail } from "@/lib/types";
+import { downloadText } from "@/lib/download";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -24,6 +25,7 @@ function SkillDetailBody() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   function load() {
     setLoading(true);
@@ -34,6 +36,18 @@ function SkillDetailBody() {
       .finally(() => setLoading(false));
   }
   useEffect(load, [slug, name]);
+
+  async function onExport() {
+    setExporting(true);
+    try {
+      const manifest = await skillApi.exportManifest(slug, name);
+      downloadText(`${name}.manifest.json`, JSON.stringify(manifest, null, 2));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "导出失败");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   if (loading) return <p className="mx-auto max-w-3xl px-4 py-8 text-muted-foreground">加载中…</p>;
   if (error) return <p className="mx-auto max-w-3xl px-4 py-8 text-destructive">{error}</p>;
@@ -49,6 +63,9 @@ function SkillDetailBody() {
         <div className="flex items-center gap-3">
           <Badge variant="secondary">★ {detail.star_count}</Badge>
           <StarButton slug={slug} name={name} starred={detail.is_starred} onToggled={load} />
+          <Button variant="outline" onClick={onExport} disabled={exporting}>
+            {exporting ? "导出中…" : "导出清单"}
+          </Button>
           <Button onClick={() => setPublishOpen(true)}>发布新版本</Button>
         </div>
       </div>
