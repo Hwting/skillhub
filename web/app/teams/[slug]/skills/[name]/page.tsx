@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { Star, Download, FileJson, Upload, PackageX, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 import { AuthGuard } from "@/components/auth-guard";
 import { StarButton } from "@/components/star-button";
 import { PublishDialog } from "@/components/publish-dialog";
+import { DeleteSkillDialog } from "@/components/delete-skill-dialog";
+import { toast } from "sonner";
 import { skillApi } from "@/lib/api";
 import { ApiError, type SkillDetail } from "@/lib/types";
 import { downloadText } from "@/lib/download";
@@ -26,6 +31,8 @@ function SkillDetailBody() {
   const [error, setError] = useState<string | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const router = useRouter();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   function load() {
     setLoading(true);
@@ -49,61 +56,86 @@ function SkillDetailBody() {
     }
   }
 
-  if (loading) return <p className="mx-auto max-w-3xl px-4 py-8 text-muted-foreground">加载中…</p>;
-  if (error) return <p className="mx-auto max-w-3xl px-4 py-8 text-destructive">{error}</p>;
+  if (loading) return <p className="mx-auto max-w-3xl px-4 py-10 text-muted-foreground">加载中…</p>;
+  if (error) return <p className="mx-auto max-w-3xl px-4 py-10 text-destructive">{error}</p>;
   if (!detail) return null;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">{detail.name}</h1>
-          <p className="text-sm text-muted-foreground">{slug}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="secondary">★ {detail.star_count}</Badge>
-          <StarButton slug={slug} name={name} starred={detail.is_starred} onToggled={load} />
-          <Button variant="outline" onClick={onExport} disabled={exporting}>
-            {exporting ? "导出中…" : "导出清单"}
-          </Button>
-          <Button onClick={() => setPublishOpen(true)}>发布新版本</Button>
-        </div>
-      </div>
+    <div className="mx-auto max-w-3xl px-4 py-10">
+      <PageHeader
+        title={detail.name}
+        description={slug}
+        className="mb-6"
+        actions={
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="gap-1">
+              <Star className="size-3" />
+              {detail.star_count}
+            </Badge>
+            <StarButton slug={slug} name={name} starred={detail.is_starred} onToggled={load} />
+            <Button variant="outline" onClick={onExport} disabled={exporting}>
+              <FileJson className="size-4" />
+              {exporting ? "导出中…" : "清单"}
+            </Button>
+            <Button onClick={() => setPublishOpen(true)}>
+              <Upload className="size-4" />
+              发布新版本
+            </Button>
+            <Button variant="outline" onClick={() => setDeleteOpen(true)}>
+              <Trash className="size-4" />
+              删除
+            </Button>
+          </div>
+        }
+      />
 
       {detail.versions.length === 0 ? (
-        <p className="text-muted-foreground">还没有版本</p>
+        <EmptyState
+          icon={PackageX}
+          title="还没有版本"
+          description="发布第一个版本吧"
+          action={
+            <Button size="sm" onClick={() => setPublishOpen(true)}>
+              <Upload className="size-4" />
+              发布版本
+            </Button>
+          }
+        />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>版本</TableHead>
-              <TableHead>大小</TableHead>
-              <TableHead>Sha256</TableHead>
-              <TableHead>发布者</TableHead>
-              <TableHead>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {detail.versions.map((v) => (
-              <TableRow key={v.id}>
-                <TableCell className="font-medium">{v.version}</TableCell>
-                <TableCell>{formatSize(v.size)}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{v.sha256.slice(0, 12)}…</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{v.publisher_user_id.slice(0, 8)}…</TableCell>
-                <TableCell>
-                  <a
-                    href={`/api/teams/${slug}/skills/${name}/versions/${v.version}`}
-                    download={`${name}-${v.version}.tar.gz`}
-                  >
-                    <Button size="sm" variant="outline">
-                      下载
-                    </Button>
-                  </a>
-                </TableCell>
+        <div className="rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>版本</TableHead>
+                <TableHead>大小</TableHead>
+                <TableHead>Sha256</TableHead>
+                <TableHead>发布者</TableHead>
+                <TableHead className="text-right">操作</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {detail.versions.map((v) => (
+                <TableRow key={v.id}>
+                  <TableCell className="font-medium">{v.version}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatSize(v.size)}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{v.sha256.slice(0, 12)}…</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{v.publisher_user_id.slice(0, 8)}…</TableCell>
+                  <TableCell className="text-right">
+                    <a
+                      href={`/api/teams/${slug}/skills/${name}/versions/${v.version}`}
+                      download={`${name}-${v.version}.tar.gz`}
+                    >
+                      <Button size="sm" variant="outline">
+                        <Download className="size-3.5" />
+                        下载
+                      </Button>
+                    </a>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
       <PublishDialog
@@ -112,6 +144,16 @@ function SkillDetailBody() {
         open={publishOpen}
         onOpenChange={setPublishOpen}
         onPublished={load}
+      />
+      <DeleteSkillDialog
+        slug={slug}
+        name={name}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onDeleted={() => {
+          toast("已删除");
+          router.push(`/teams/${slug}`);
+        }}
       />
     </div>
   );
