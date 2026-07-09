@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { SearchResult } from "@/lib/types";
 
@@ -12,9 +13,9 @@ export function SkillListItem({ skill }: { skill: SearchResult }) {
   return (
     <Link
       href={`/teams/${skill.team_slug}/skills/${skill.name}`}
-      className="flex items-center justify-between rounded-lg border p-4 hover:bg-muted/50"
+      className="group flex items-center justify-between rounded-xl border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-pop"
     >
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2">
           <span className="font-medium">{skill.name}</span>
           <Badge variant="secondary">{skill.team_slug}</Badge>
@@ -27,6 +28,7 @@ export function SkillListItem({ skill }: { skill: SearchResult }) {
           <span className="text-sm text-muted-foreground">无版本</span>
         )}
       </div>
+      <Star className="size-4 text-muted-foreground/40 transition-colors group-hover:text-primary/60" />
     </Link>
   );
 }

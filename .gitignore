@@ -1,6 +1,8 @@
 /bin/
 /var/
 /.superpowers
+/docs
+.playwright-mcp
 **/var/
 *.test
 *.out

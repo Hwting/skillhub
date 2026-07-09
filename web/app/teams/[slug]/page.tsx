@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/page-header";
 import { AuthGuard } from "@/components/auth-guard";
 import { useUser } from "@/components/providers/user-provider";
 import { teamApi } from "@/lib/api";
@@ -30,16 +31,19 @@ function TeamDetailBody() {
 
   useEffect(load, [slug]);
 
-  if (loading) return <p className="mx-auto max-w-3xl px-4 py-8 text-muted-foreground">加载中…</p>;
-  if (error) return <p className="mx-auto max-w-3xl px-4 py-8 text-destructive">{error}</p>;
+  if (loading) return <p className="mx-auto max-w-3xl px-4 py-10 text-muted-foreground">加载中…</p>;
+  if (error) return <p className="mx-auto max-w-3xl px-4 py-10 text-destructive">{error}</p>;
   if (!team) return null;
 
   const isOwner = !!user && team.owner_user_id === user.id;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-1 text-xl font-semibold">{team.name}</h1>
-      <p className="mb-6 text-sm text-muted-foreground">{team.slug}</p>
+    <div className="mx-auto max-w-3xl px-4 py-10">
+      <PageHeader
+        title={team.name}
+        description={team.slug}
+        className="mb-6"
+      />
       <Tabs defaultValue="skills">
         <TabsList>
           <TabsTrigger value="skills">Skills</TabsTrigger>

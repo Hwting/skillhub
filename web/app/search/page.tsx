@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SkillListItem } from "@/components/skill-list-item";
 import { Pagination } from "@/components/pagination";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
+import { CardListSkeleton } from "@/components/skeletons";
 import { AuthGuard } from "@/components/auth-guard";
 import { skillApi } from "@/lib/api";
 import { ApiError, type SearchResult } from "@/lib/types";
@@ -18,7 +22,6 @@ function SearchBody() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // debounce the query input
   useEffect(() => {
     const t = setTimeout(() => {
       setDebounced(q);
@@ -38,19 +41,30 @@ function SearchBody() {
   }, [debounced, page]);
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="mb-4 text-xl font-semibold">搜索 skill</h1>
-      <Input
-        placeholder="按名称搜索…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="mb-4"
+    <div className="mx-auto max-w-3xl px-4 py-10">
+      <PageHeader
+        title="搜索 skill"
+        description="跨所有可见团队与全局命名空间查找"
+        className="mb-6"
       />
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="按名称搜索…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+      {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
       {loading ? (
-        <p className="text-muted-foreground">加载中…</p>
+        <CardListSkeleton />
       ) : items.length === 0 ? (
-        <p className="text-muted-foreground">无结果</p>
+        <EmptyState
+          icon={Search}
+          title="无结果"
+          description={debounced ? `没有匹配「${debounced}」的 skill` : "还没有可见的 skill"}
+        />
       ) : (
         <div className="flex flex-col gap-2">
           {items.map((s) => (

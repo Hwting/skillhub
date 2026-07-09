@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Search, Package, Download, FileJson, Eye } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/pagination";
+import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
+import { TableSkeleton } from "@/components/skeletons";
 import { AuthGuard } from "@/components/auth-guard";
 import { skillApi } from "@/lib/api";
 import { ApiError, type SearchResult } from "@/lib/types";
@@ -68,80 +72,99 @@ function SkillsManageBody() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <h1 className="mb-4 text-xl font-semibold">技能管理</h1>
-      <Input
-        placeholder="过滤名称…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        className="mb-4"
+    <div className="mx-auto max-w-5xl px-4 py-10">
+      <PageHeader
+        title="技能管理"
+        description="你可见的全部 skill — 下载最新版本或导出清单"
+        className="mb-6"
       />
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="过滤名称…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          className="pl-9"
+        />
+      </div>
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
       {loading ? (
-        <p className="text-muted-foreground">加载中…</p>
+        <TableSkeleton rows={6} cols={5} />
       ) : items.length === 0 ? (
-        <p className="text-muted-foreground">没有可见的 skill</p>
+        <EmptyState
+          icon={Package}
+          title="没有可见的 skill"
+          description="去发布页创建你的第一个 skill"
+          action={
+            <Button size="sm" nativeButton={false} render={<Link href="/publish" />}>
+              发布 skill
+            </Button>
+          }
+        />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>名称</TableHead>
-              <TableHead>团队</TableHead>
-              <TableHead>最新版本</TableHead>
-              <TableHead>大小</TableHead>
-              <TableHead>操作</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((s) => {
-              const key = `${s.team_slug}/${s.name}`;
-              const lv = s.latest_version;
-              return (
-                <TableRow key={s.id}>
-                  <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">{s.team_slug}</Badge>
-                  </TableCell>
-                  <TableCell>{lv ? lv.version : "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {lv ? formatSize(lv.size) : "—"}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {lv ? (
-                        <a
-                          href={`/api/teams/${s.team_slug}/skills/${s.name}/versions/${lv.version}`}
-                          download={`${s.name}-${lv.version}.tar.gz`}
-                        >
-                          <Button size="sm" variant="outline">
+        <div className="rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>名称</TableHead>
+                <TableHead>团队</TableHead>
+                <TableHead>最新版本</TableHead>
+                <TableHead>大小</TableHead>
+                <TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((s) => {
+                const key = `${s.team_slug}/${s.name}`;
+                const lv = s.latest_version;
+                return (
+                  <TableRow key={s.id}>
+                    <TableCell className="font-medium">{s.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{s.team_slug}</Badge>
+                    </TableCell>
+                    <TableCell>{lv ? lv.version : "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {lv ? formatSize(lv.size) : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {lv ? (
+                          <a
+                            href={`/api/teams/${s.team_slug}/skills/${s.name}/versions/${lv.version}`}
+                            download={`${s.name}-${lv.version}.tar.gz`}
+                          >
+                            <Button size="sm" variant="outline">
+                              <Download className="size-3.5" />
+                              下载
+                            </Button>
+                          </a>
+                        ) : (
+                          <Button size="sm" variant="outline" disabled>
+                            <Download className="size-3.5" />
                             下载
                           </Button>
-                        </a>
-                      ) : (
-                        <Button size="sm" variant="outline" disabled>
-                          下载
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={exporting === key}
+                          onClick={() => onExport(s.team_slug, s.name)}
+                        >
+                          <FileJson className="size-3.5" />
+                          {exporting === key ? "导出中…" : "清单"}
                         </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={exporting === key}
-                        onClick={() => onExport(s.team_slug, s.name)}
-                      >
-                        {exporting === key ? "导出中…" : "导出清单"}
-                      </Button>
-                      <Link href={`/teams/${s.team_slug}/skills/${s.name}`}>
-                        <Button size="sm" variant="ghost">
-                          查看
+                        <Button size="sm" variant="ghost" nativeButton={false} render={<Link href={`/teams/${s.team_slug}/skills/${s.name}`} />}>
+                          <Eye className="size-3.5" />
                         </Button>
-                      </Link>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       )}
       <Pagination
         page={page}

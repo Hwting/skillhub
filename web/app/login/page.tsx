@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,10 +34,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <Card className="w-full max-w-sm">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
+      <Link href="/" className="flex items-center gap-2 font-semibold">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <Boxes className="size-5" />
+        </span>
+        <span className="text-lg">SkillHub</span>
+      </Link>
+      <Card className="w-full max-w-sm shadow-soft">
         <CardHeader>
-          <CardTitle>登录 SkillHub</CardTitle>
+          <CardTitle>登录</CardTitle>
           <CardDescription>输入你的邮箱和密码</CardDescription>
         </CardHeader>
         <CardContent>
