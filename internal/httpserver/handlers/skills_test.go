@@ -432,3 +432,61 @@ func TestE2E_GlobalSkill_AnyoneCanStar(t *testing.T) {
 		t.Fatalf("expected is_starred true: %s", w.Body.String())
 	}
 }
+
+func deleteWithCookie(t *testing.T, r *gin.Engine, cookie *http.Cookie, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := reqWithCookie("DELETE", path, cookie, "")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestE2E_DeleteSkill_OwnerSucceeds(t *testing.T) {
+	r := setupTeamApp(t)
+	owner := registerAndLogin(t, r, "owner@x.com", "password1")
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("POST", "/teams", owner, `{"slug":"acme","name":"Acme"}`))
+	if w := publishSkill(t, r, owner, "acme", "my-skill", "1.0.0", []byte("payload")); w.Code != 201 {
+		t.Fatalf("publish: %d %s", w.Code, w.Body.String())
+	}
+	w := deleteWithCookie(t, r, owner, "/teams/acme/skills/my-skill")
+	if w.Code != 204 {
+		t.Fatalf("delete: got %d %s", w.Code, w.Body.String())
+	}
+	// Skill is gone.
+	w = getWithCookie(t, r, owner, "/teams/acme/skills/my-skill")
+	if w.Code != 404 {
+		t.Fatalf("get after delete: got %d", w.Code)
+	}
+	// Idempotent-ish: deleting again is 404 (skill not found), not 500.
+	w = deleteWithCookie(t, r, owner, "/teams/acme/skills/my-skill")
+	if w.Code != 404 {
+		t.Fatalf("second delete: got %d", w.Code)
+	}
+}
+
+func TestE2E_DeleteSkill_NonMember_Forbidden(t *testing.T) {
+	r := setupTeamApp(t)
+	owner := registerAndLogin(t, r, "owner@x.com", "password1")
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("POST", "/teams", owner, `{"slug":"acme","name":"Acme"}`))
+	publishSkill(t, r, owner, "acme", "my-skill", "1.0.0", []byte("payload"))
+	other := registerAndLogin(t, r, "other@x.com", "password1")
+	w := deleteWithCookie(t, r, other, "/teams/acme/skills/my-skill")
+	if w.Code != 403 {
+		t.Fatalf("non-member delete: got %d", w.Code)
+	}
+}
+
+func TestE2E_DeleteSkill_MemberUnderAdminOnly_Forbidden(t *testing.T) {
+	r := setupTeamApp(t)
+	owner := registerAndLogin(t, r, "owner@x.com", "password1")
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("POST", "/teams", owner, `{"slug":"acme","name":"Acme"}`))
+	publishSkill(t, r, owner, "acme", "my-skill", "1.0.0", []byte("payload"))
+	member := registerAndLogin(t, r, "member@x.com", "password1")
+	memberID := userIDByEmail(t, "member@x.com")
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("POST", "/teams/acme/members", owner, `{"user_id":"`+memberID+`","role":"member"}`))
+	// acme is admin_only by default → member cannot delete.
+	w := deleteWithCookie(t, r, member, "/teams/acme/skills/my-skill")
+	if w.Code != 403 {
+		t.Fatalf("member delete under admin_only: got %d", w.Code)
+	}
+}

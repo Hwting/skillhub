@@ -16,7 +16,10 @@ import (
 	"go.uber.org/zap"
 )
 
-type memStore struct{ objs map[string][]byte }
+type memStore struct {
+	objs      map[string][]byte
+	deleteErr error
+}
 
 func newMemStore() *memStore { return &memStore{objs: map[string][]byte{}} }
 
@@ -32,7 +35,13 @@ func (m *memStore) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	}
 	return io.NopCloser(bytes.NewReader(b)), nil
 }
-func (m *memStore) Delete(ctx context.Context, key string) error { delete(m.objs, key); return nil }
+func (m *memStore) Delete(ctx context.Context, key string) error {
+	if m.deleteErr != nil {
+		return m.deleteErr
+	}
+	delete(m.objs, key)
+	return nil
+}
 func (m *memStore) Stat(ctx context.Context, key string) (storage.ObjectInfo, error) {
 	return storage.ObjectInfo{}, nil
 }
@@ -80,6 +89,11 @@ func (m *mockSkillRepo) ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) 
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+func (m *mockSkillRepo) DeleteSkill(ctx context.Context, skillID uuid.UUID) error {
+	delete(m.skills, skillID)
+	delete(m.versions, skillID)
+	return nil
 }
 func (m *mockSkillRepo) CreateVersion(ctx context.Context, v *SkillVersion) error {
 	for _, e := range m.versions[v.SkillID] {
@@ -466,5 +480,57 @@ func TestListMyStars_PaginationClamp(t *testing.T) {
 	}
 	if res[0].LatestVersion == nil || res[0].LatestVersion.Version != "1.0.0" {
 		t.Fatalf("latest=%+v", res[0].LatestVersion)
+	}
+}
+
+func TestDeleteSkill_RemovesRowAndStorage(t *testing.T) {
+	s, r, st := newSkillSvc()
+	ctx := context.Background()
+	tid, pub := uuid.New(), uuid.New()
+	sv, err := s.Publish(ctx, tid, "del-me", "1.0.0", bytes.NewReader([]byte("payload")), 7, ContentTypeTarball, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteSkill(ctx, tid, "del-me", pub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.GetSkill(ctx, tid, "del-me"); err == nil {
+		t.Fatal("skill still exists")
+	}
+	if _, ok := st.objs[sv.StorageKey]; ok {
+		t.Fatal("storage object not deleted")
+	}
+}
+
+func TestDeleteSkill_StorageFailureStillSucceeds(t *testing.T) {
+	s, r, st := newSkillSvc()
+	ctx := context.Background()
+	tid, pub := uuid.New(), uuid.New()
+	sv, err := s.Publish(ctx, tid, "del-me", "1.0.0", bytes.NewReader([]byte("payload")), 7, ContentTypeTarball, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt the in-mem store so Delete returns an error for this key.
+	delete(st.objs, sv.StorageKey)
+	st.deleteErr = errors.New("storage down")
+
+	if err := s.DeleteSkill(ctx, tid, "del-me", pub); err != nil {
+		t.Fatalf("delete must not fail on storage error: %v", err)
+	}
+	if _, err := r.GetSkill(ctx, tid, "del-me"); err == nil {
+		t.Fatal("skill row should be gone despite storage failure")
+	}
+}
+
+func TestDeleteSkill_NotFound(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	err := s.DeleteSkill(ctx, uuid.New(), "nope", uuid.New())
+	if err == nil {
+		t.Fatal("expected not_found")
+	}
+	e, ok := err.(*apperr.Error)
+	if !ok || e.Code != "not_found" {
+		t.Fatalf("expected not_found, got %v", err)
 	}
 }

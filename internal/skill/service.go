@@ -193,6 +193,43 @@ func (s *Service) OpenVersion(ctx context.Context, teamID uuid.UUID, name, versi
 	return rc, sv, nil
 }
 
+// DeleteSkill removes a skill, its versions, and star records (via DB cascade),
+// then best-effort deletes each backing storage object. Storage failures are
+// logged but do not fail the request — the DB is the source of truth and any
+// orphaned objects can be reclaimed by a future GC pass.
+func (s *Service) DeleteSkill(ctx context.Context, teamID uuid.UUID, name string, actorID uuid.UUID) error {
+	sk, err := s.repo.GetSkill(ctx, teamID, name)
+	if err != nil {
+		return err
+	}
+	vs, err := s.repo.ListVersions(ctx, sk.ID)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.DeleteSkill(ctx, sk.ID); err != nil {
+		return err
+	}
+	for _, v := range vs {
+		if err := s.store.Delete(ctx, v.StorageKey); err != nil {
+			_ = s.audit.Log(ctx, audit.Entry{
+				ActorUserID: &actorID,
+				Action:      audit.Action("skill_storage_delete_failed"),
+				TargetType:  "skill_version",
+				TargetID:    v.ID.String(),
+				Metadata:    map[string]any{"key": v.StorageKey, "error": err.Error()},
+			})
+		}
+	}
+	_ = s.audit.Log(ctx, audit.Entry{
+		ActorUserID: &actorID,
+		Action:      audit.Action("skill_deleted"),
+		TargetType:  "skill",
+		TargetID:    sk.ID.String(),
+		Metadata:    map[string]any{"name": name, "team_id": teamID.String(), "version_count": len(vs)},
+	})
+	return nil
+}
+
 func isNotFound(err error) bool {
 	e, ok := err.(*apperr.Error)
 	return ok && e.Code == "not_found"

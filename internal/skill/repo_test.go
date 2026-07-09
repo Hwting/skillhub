@@ -253,3 +253,36 @@ func TestRepo_ListStarredSkills(t *testing.T) {
 		t.Fatalf("limit: %d", len(rows))
 	}
 }
+
+func TestRepo_DeleteSkill_Cascades(t *testing.T) {
+	r, tid, oid := setupSkillDB(t)
+	ctx := context.Background()
+	s := &Skill{TeamID: tid, Name: "del-me"}
+	if err := r.CreateSkill(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	v := &SkillVersion{
+		SkillID: s.ID, Version: "1.0.0", StorageKey: "k", Size: 1,
+		Sha256: "x", ContentType: ContentTypeTarball, PublisherUserID: oid,
+	}
+	if err := r.CreateVersion(ctx, v); err != nil {
+		t.Fatal(err)
+	}
+	starer := newStarUser(t)
+	if err := r.Star(ctx, starer, s.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.DeleteSkill(ctx, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.GetSkill(ctx, tid, "del-me"); err == nil {
+		t.Fatal("skill still exists after delete")
+	}
+	if vs, err := r.ListVersions(ctx, s.ID); err != nil || len(vs) != 0 {
+		t.Fatalf("versions not cascaded: %v len=%d", err, len(vs))
+	}
+	if n, err := r.CountStars(ctx, s.ID); err != nil || n != 0 {
+		t.Fatalf("stars not cascaded: n=%d", n)
+	}
+}

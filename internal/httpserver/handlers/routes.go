@@ -61,6 +61,7 @@ func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRep
 	{
 		skillGroup.GET("", auth.TeamScoped(teamSvc, "member"), skillH.ListSkills)
 		skillGroup.GET("/:name", auth.TeamScoped(teamSvc, "member"), skillH.GetSkill)
+		skillGroup.DELETE("/:name", auth.TeamScoped(teamSvc, "member"), skillH.DeleteSkill)
 		skillGroup.POST("/:name/versions/:version", auth.TeamScoped(teamSvc, "member"), skillH.Publish)
 		skillGroup.GET("/:name/versions/:version", auth.TeamScoped(teamSvc, "member"), skillH.Download)
 		skillGroup.POST("/:name/star", auth.TeamScoped(teamSvc, "member"), skillH.Star)
