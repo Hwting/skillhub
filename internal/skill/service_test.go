@@ -81,6 +81,11 @@ func (m *mockSkillRepo) ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) 
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
+func (m *mockSkillRepo) DeleteSkill(ctx context.Context, skillID uuid.UUID) error {
+	delete(m.skills, skillID)
+	delete(m.versions, skillID)
+	return nil
+}
 func (m *mockSkillRepo) CreateVersion(ctx context.Context, v *SkillVersion) error {
 	for _, e := range m.versions[v.SkillID] {
 		if e.Version == v.Version {

@@ -22,6 +22,7 @@ type Repo interface {
 	GetSkill(ctx context.Context, teamID uuid.UUID, name string) (*Skill, error)
 	GetSkillByID(ctx context.Context, skillID uuid.UUID) (*Skill, error)
 	ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) ([]Skill, error)
+	DeleteSkill(ctx context.Context, skillID uuid.UUID) error
 	CreateVersion(ctx context.Context, v *SkillVersion) error
 	GetVersion(ctx context.Context, skillID uuid.UUID, version string) (*SkillVersion, error)
 	ListVersions(ctx context.Context, skillID uuid.UUID) ([]SkillVersion, error)
@@ -90,6 +91,14 @@ func (r *repo) ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) ([]Skill,
 		return nil, fmt.Errorf("list skills: %w", err)
 	}
 	return ss, nil
+}
+
+// DeleteSkill removes the skill row; skill_versions and skill_stars cascade.
+func (r *repo) DeleteSkill(ctx context.Context, skillID uuid.UUID) error {
+	if err := r.db.WithContext(ctx).Delete(&Skill{}, "id = ?", skillID).Error; err != nil {
+		return fmt.Errorf("delete skill: %w", err)
+	}
+	return nil
 }
 
 func (r *repo) CreateVersion(ctx context.Context, v *SkillVersion) error {
