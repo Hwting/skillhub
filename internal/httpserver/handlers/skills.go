@@ -142,6 +142,32 @@ func (h *SkillHandlers) Unstar(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// DeleteSkill handles DELETE /teams/:slug/skills/:name. Authorization reuses
+// CanPublish: anyone allowed to publish may delete. Storage cleanup is
+// best-effort; the DB row is removed first (cascade clears versions + stars).
+func (h *SkillHandlers) DeleteSkill(c *gin.Context) {
+	t, ok := auth.CurrentTeam(c)
+	if !ok {
+		c.Error(apperr.New("not_found", "team", "no team"))
+		return
+	}
+	u, ok := auth.CurrentUser(c)
+	if !ok {
+		c.Error(apperr.New("unauthorized", "auth", "no user"))
+		return
+	}
+	if !h.teamSvc.CanPublish(c.Request.Context(), t, u.ID) {
+		c.Error(apperr.New("forbidden", "skill", "forbidden"))
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	if err := h.svc.DeleteSkill(c.Request.Context(), t.ID, c.Param("name"), u.ID); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 // ListMyStars handles GET /me/stars?page=&page_size=.
 func (h *SkillHandlers) ListMyStars(c *gin.Context) {
 	u, ok := auth.CurrentUser(c)
