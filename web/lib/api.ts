@@ -96,6 +96,8 @@ export const skillApi = {
     apiFetch<ListResponse<SkillSummary>>(`/teams/${slug}/skills`),
   detail: (slug: string, name: string) =>
     apiFetch<SkillDetail>(`/teams/${slug}/skills/${name}`),
+  delete: (slug: string, name: string) =>
+    apiFetch<null>(`/teams/${slug}/skills/${name}`, { method: "DELETE" }),
   star: (slug: string, name: string) =>
     apiFetch<null>(`/teams/${slug}/skills/${name}/star`, { method: "POST" }),
   unstar: (slug: string, name: string) =>
