@@ -55,9 +55,10 @@ func main() {
 		Storage:    store,
 		UserSvc:    userSvc,
 		SessionMgr: sessionMgr,
-		UserRepo:   userRepo,
-		TeamSvc:    teamSvc,
-		SkillSvc:   skillSvc,
+		UserRepo:    userRepo,
+		TeamSvc:     teamSvc,
+		SkillSvc:    skillSvc,
+		AuditLogger: auditLogger,
 	})
 	srv := &http.Server{
 		Addr:         cfg.Server.Addr,

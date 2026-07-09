@@ -2,13 +2,14 @@ package handlers
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/skillhub/skillhub/internal/audit"
 	"github.com/skillhub/skillhub/internal/auth"
 	"github.com/skillhub/skillhub/internal/skill"
 	"github.com/skillhub/skillhub/internal/team"
 	"github.com/skillhub/skillhub/internal/user"
 )
 
-func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRepo user.Repo, teamSvc *team.Service, skillSvc *skill.Service) {
+func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRepo user.Repo, teamSvc *team.Service, skillSvc *skill.Service, auditLog *audit.Logger) {
 	authH := NewAuthHandlers(svc, sm)
 	userH := NewUserHandlers(svc)
 
@@ -32,6 +33,9 @@ func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRep
 		admin.GET("/users/:id", userH.Get)
 		admin.PATCH("/users/:id", userH.Patch)
 		admin.DELETE("/users/:id", userH.Delete)
+		adminH := NewAdminHandlers(skillSvc, teamSvc, auditLog)
+		admin.POST("/skills/promote", adminH.Promote)
+		admin.GET("/audit", adminH.ListAudit)
 	}
 
 	teamH := NewTeamHandlers(teamSvc)

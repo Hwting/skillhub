@@ -53,7 +53,7 @@ func setupApp(t *testing.T) *gin.Engine {
 	sessionMgr := auth.NewSessionManager(rdb, cfg.Auth)
 	return httpserver.New(httpserver.Deps{
 		Logger: zap.NewNop(), DB: gdb, Redis: rdb, Storage: store,
-		UserSvc: userSvc, SessionMgr: sessionMgr, UserRepo: userRepo, TeamSvc: teamSvc, SkillSvc: skillSvc,
+		UserSvc: userSvc, SessionMgr: sessionMgr, UserRepo: userRepo, TeamSvc: teamSvc, SkillSvc: skillSvc, AuditLogger: auditLogger,
 	})
 }
 
