@@ -64,6 +64,12 @@ func (m *mockSkillRepo) GetSkill(ctx context.Context, teamID uuid.UUID, name str
 	}
 	return nil, apperr.New("not_found", "skill", "skill not found")
 }
+func (m *mockSkillRepo) GetSkillByID(ctx context.Context, skillID uuid.UUID) (*Skill, error) {
+	if s, ok := m.skills[skillID]; ok {
+		return s, nil
+	}
+	return nil, apperr.New("not_found", "skill", "skill not found")
+}
 func (m *mockSkillRepo) ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) ([]Skill, error) {
 	var out []Skill
 	for _, e := range m.skills {
@@ -242,5 +248,79 @@ func TestService_Search_PaginationClamp(t *testing.T) {
 	longQ := strings.Repeat("a", 257)
 	if _, err := s.Search(ctx, []uuid.UUID{tid}, longQ, 1, 20); err == nil {
 		t.Fatal("expected query too long")
+	}
+}
+
+func TestPromoteToGlobal(t *testing.T) {
+	s, _, st := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	src, _ := s.Publish(ctx, tid, "go-lint", "1.0.0", bytes.NewReader([]byte("payload")), 7, ContentTypeTarball, pub)
+	globalTeam := uuid.New()
+	admin := uuid.New()
+
+	gv, err := s.PromoteToGlobal(ctx, src.SkillID, "1.0.0", globalTeam, "go-lint", admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gv.SkillID == src.SkillID {
+		t.Fatal("global version should belong to a different skill")
+	}
+	if gv.Sha256 != src.Sha256 {
+		t.Fatal("sha mismatch")
+	}
+	if _, ok := st.objs[gv.StorageKey]; !ok {
+		t.Fatal("global object not stored")
+	}
+	if gv.StorageKey == src.StorageKey {
+		t.Fatal("should be a copy, not same key")
+	}
+}
+
+func TestPromoteToGlobal_VersionConflict(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	src, _ := s.Publish(ctx, tid, "go-lint", "1.0.0", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub)
+	globalTeam := uuid.New()
+	admin := uuid.New()
+	_, _ = s.PromoteToGlobal(ctx, src.SkillID, "1.0.0", globalTeam, "go-lint", admin)
+	_, err := s.PromoteToGlobal(ctx, src.SkillID, "1.0.0", globalTeam, "go-lint", admin)
+	if err == nil {
+		t.Fatal("expected conflict")
+	}
+	e, ok := err.(*apperr.Error)
+	if !ok || e.Code != "conflict" {
+		t.Fatalf("expected conflict, got %v", err)
+	}
+}
+
+func TestPromoteToGlobal_SourceVersionMissing(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	src, _ := s.Publish(ctx, tid, "go-lint", "1.0.0", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub)
+	globalTeam := uuid.New()
+	admin := uuid.New()
+	_, err := s.PromoteToGlobal(ctx, src.SkillID, "9.9.9", globalTeam, "go-lint", admin)
+	if err == nil {
+		t.Fatal("expected not found")
+	}
+}
+
+func TestPromoteToGlobal_InvalidTargetName(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	src, _ := s.Publish(ctx, tid, "go-lint", "1.0.0", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub)
+	globalTeam := uuid.New()
+	admin := uuid.New()
+	_, err := s.PromoteToGlobal(ctx, src.SkillID, "1.0.0", globalTeam, "BadName", admin)
+	if err == nil {
+		t.Fatal("expected invalid name")
 	}
 }

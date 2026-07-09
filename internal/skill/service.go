@@ -187,3 +187,71 @@ func latestVersion(vs []SkillVersion) *SkillVersion {
 	}
 	return best
 }
+
+// PromoteToGlobal copies a team skill's version into the global namespace under
+// targetName. If a global skill with targetName already exists, the version is
+// added to it (the version must not already exist there). The source storage
+// object is copied to a global-owned key so the global version is self-contained.
+func (s *Service) PromoteToGlobal(ctx context.Context, srcSkillID uuid.UUID, version string, globalTeamID uuid.UUID, targetName string, adminID uuid.UUID) (*SkillVersion, error) {
+	if !IsValidName(targetName) {
+		return nil, apperr.New("validation_failed", "skill", "invalid target name")
+	}
+	srcVer, err := s.repo.GetVersion(ctx, srcSkillID, version)
+	if err != nil {
+		return nil, err
+	}
+
+	// 找或建 global skill
+	gSkill, err := s.repo.GetSkill(ctx, globalTeamID, targetName)
+	if err != nil {
+		if !isNotFound(err) {
+			return nil, err
+		}
+		gSkill = &Skill{TeamID: globalTeamID, Name: targetName}
+		if err := s.repo.CreateSkill(ctx, gSkill); err != nil {
+			return nil, err
+		}
+	}
+	// version 已存在 → conflict
+	if existing, err := s.repo.GetVersion(ctx, gSkill.ID, version); err == nil && existing != nil {
+		return nil, apperr.New("conflict", "skill", "version already exists in global")
+	}
+
+	// 复制对象
+	rc, err := s.store.Get(ctx, srcVer.StorageKey)
+	if err != nil {
+		return nil, fmt.Errorf("store get source: %w", err)
+	}
+	defer rc.Close()
+	buf := &bytes.Buffer{}
+	if _, err := io.Copy(buf, rc); err != nil {
+		return nil, apperr.New("validation_failed", "skill", "read source failed")
+	}
+	sum := sha256.Sum256(buf.Bytes())
+	sha := hex.EncodeToString(sum[:])
+	if sha != srcVer.Sha256 {
+		return nil, apperr.New("db_error", "skill", "integrity check failed")
+	}
+	newKey := fmt.Sprintf("skills/%s/%s/%s.tar.gz", gSkill.ID.String(), version, sha)
+	if _, err := s.store.Put(ctx, newKey, bytes.NewReader(buf.Bytes()), int64(buf.Len()), srcVer.ContentType); err != nil {
+		return nil, fmt.Errorf("store put global: %w", err)
+	}
+
+	gv := &SkillVersion{
+		SkillID:         gSkill.ID,
+		Version:         version,
+		StorageKey:      newKey,
+		Size:            int64(buf.Len()),
+		Sha256:          sha,
+		ContentType:     srcVer.ContentType,
+		PublisherUserID: adminID,
+	}
+	if err := s.repo.CreateVersion(ctx, gv); err != nil {
+		if !isConflict(err) {
+			_ = s.store.Delete(ctx, newKey)
+		}
+		return nil, err
+	}
+	_ = s.audit.Log(ctx, audit.Entry{ActorUserID: &adminID, Action: audit.Action("skill_promoted_to_global"), TargetType: "skill_version", TargetID: gv.ID.String(), Metadata: map[string]any{"src_skill_id": srcSkillID.String(), "global_skill_id": gSkill.ID.String(), "version": version, "target_name": targetName}})
+	return gv, nil
+}

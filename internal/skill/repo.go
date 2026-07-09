@@ -20,6 +20,7 @@ func IsValidName(name string) bool { return nameRe.MatchString(name) }
 type Repo interface {
 	CreateSkill(ctx context.Context, s *Skill) error
 	GetSkill(ctx context.Context, teamID uuid.UUID, name string) (*Skill, error)
+	GetSkillByID(ctx context.Context, skillID uuid.UUID) (*Skill, error)
 	ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) ([]Skill, error)
 	CreateVersion(ctx context.Context, v *SkillVersion) error
 	GetVersion(ctx context.Context, skillID uuid.UUID, version string) (*SkillVersion, error)
@@ -63,6 +64,17 @@ func (r *repo) GetSkill(ctx context.Context, teamID uuid.UUID, name string) (*Sk
 			return nil, apperr.New("not_found", "skill", "skill not found")
 		}
 		return nil, fmt.Errorf("get skill: %w", err)
+	}
+	return &s, nil
+}
+
+func (r *repo) GetSkillByID(ctx context.Context, skillID uuid.UUID) (*Skill, error) {
+	var s Skill
+	if err := r.db.WithContext(ctx).First(&s, "id = ?", skillID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperr.New("not_found", "skill", "skill not found")
+		}
+		return nil, fmt.Errorf("get skill by id: %w", err)
 	}
 	return &s, nil
 }
