@@ -89,19 +89,6 @@ func (s *Service) Publish(ctx context.Context, teamID uuid.UUID, name, version s
 	return sv, nil
 }
 
-func (s *Service) GetSkillWithVersions(ctx context.Context, teamID uuid.UUID, name string) (*Skill, []SkillVersion, error) {
-	sk, err := s.repo.GetSkill(ctx, teamID, name)
-	if err != nil {
-		return nil, nil, err
-	}
-	vs, err := s.repo.ListVersions(ctx, sk.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-	sort.Slice(vs, func(i, j int) bool { return Compare(vs[i].Version, vs[j].Version) > 0 })
-	return sk, vs, nil
-}
-
 func (s *Service) ListSkillsByTeam(ctx context.Context, teamID uuid.UUID) ([]Skill, error) {
 	return s.repo.ListSkillsByTeam(ctx, teamID)
 }

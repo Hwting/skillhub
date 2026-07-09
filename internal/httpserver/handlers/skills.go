@@ -91,13 +91,15 @@ func (h *SkillHandlers) ListSkills(c *gin.Context) {
 
 func (h *SkillHandlers) GetSkill(c *gin.Context) {
 	t, _ := auth.CurrentTeam(c)
-	sk, vs, err := h.svc.GetSkillWithVersions(c.Request.Context(), t.ID, c.Param("name"))
+	u, _ := auth.CurrentUser(c)
+	viewerID := u.ID
+	d, err := h.svc.GetSkillDetail(c.Request.Context(), t.ID, c.Param("name"), viewerID)
 	if err != nil {
 		c.Error(err)
 		return
 	}
-	out := make([]versionResp, len(vs))
-	for i, v := range vs {
+	out := make([]versionResp, len(d.Versions))
+	for i, v := range d.Versions {
 		out[i] = versionResp{
 			ID:          v.ID.String(),
 			Version:     v.Version,
@@ -108,7 +110,68 @@ func (h *SkillHandlers) GetSkill(c *gin.Context) {
 			CreatedAt:   v.CreatedAt.Format(timeRFC3339),
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"id": sk.ID.String(), "team_id": sk.TeamID.String(), "name": sk.Name, "versions": out})
+	c.JSON(http.StatusOK, gin.H{
+		"id":         d.ID.String(),
+		"team_id":    d.TeamID.String(),
+		"name":       d.Name,
+		"versions":   out,
+		"star_count": d.StarCount,
+		"is_starred": d.IsStarred,
+	})
+}
+
+// Star handles POST /teams/:slug/skills/:name/star — idempotent.
+func (h *SkillHandlers) Star(c *gin.Context) {
+	t, _ := auth.CurrentTeam(c)
+	u, _ := auth.CurrentUser(c)
+	if err := h.svc.Star(c.Request.Context(), u.ID, t.ID, c.Param("name")); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// Unstar handles DELETE /teams/:slug/skills/:name/star.
+func (h *SkillHandlers) Unstar(c *gin.Context) {
+	t, _ := auth.CurrentTeam(c)
+	u, _ := auth.CurrentUser(c)
+	if err := h.svc.Unstar(c.Request.Context(), u.ID, t.ID, c.Param("name")); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// ListMyStars handles GET /me/stars?page=&page_size=.
+func (h *SkillHandlers) ListMyStars(c *gin.Context) {
+	u, ok := auth.CurrentUser(c)
+	if !ok {
+		c.Error(apperr.New("unauthorized", "auth", "no user"))
+		return
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	res, err := h.svc.ListMyStars(c.Request.Context(), u.ID, page, pageSize)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	out := make([]searchResultResp, len(res))
+	for i, r := range res {
+		out[i] = searchResultResp{ID: r.ID.String(), TeamID: r.TeamID.String(), TeamSlug: r.TeamSlug, Name: r.Name}
+		if r.LatestVersion != nil {
+			out[i].LatestVersion = &versionResp{
+				ID:          r.LatestVersion.ID.String(),
+				Version:     r.LatestVersion.Version,
+				Size:        r.LatestVersion.Size,
+				Sha256:      r.LatestVersion.Sha256,
+				ContentType: r.LatestVersion.ContentType,
+				Publisher:   r.LatestVersion.PublisherUserID.String(),
+				CreatedAt:   r.LatestVersion.CreatedAt.Format(timeRFC3339),
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": out, "page": page, "page_size": pageSize})
 }
 
 func (h *SkillHandlers) Download(c *gin.Context) {

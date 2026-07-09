@@ -290,3 +290,145 @@ func TestE2E_SkillSearch_GlobalVisible(t *testing.T) {
 		t.Fatalf("latest version missing: %s", w.Body.String())
 	}
 }
+
+func TestE2E_StarLifecycle(t *testing.T) {
+	r := setupTeamApp(t)
+	owner := registerAndLogin(t, r, "owner@x.com", "password1")
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("POST", "/teams", owner, `{"slug":"acme","name":"Acme"}`))
+	publishSkill(t, r, owner, "acme", "my-skill", "1.0.0", []byte("x"))
+
+	// 成员 star → 204
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, reqWithCookie("POST", "/teams/acme/skills/my-skill/star", owner, ""))
+	if w.Code != 204 {
+		t.Fatalf("star: %d %s", w.Code, w.Body.String())
+	}
+
+	// 详情 is_starred=true, star_count=1
+	w = getWithCookie(t, r, owner, "/teams/acme/skills/my-skill")
+	if w.Code != 200 {
+		t.Fatalf("get skill: %d %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !contains(body, `"is_starred":true`) {
+		t.Fatalf("expected is_starred true: %s", body)
+	}
+	if !contains(body, `"star_count":1`) {
+		t.Fatalf("expected star_count 1: %s", body)
+	}
+
+	// 幂等：再 star 仍 204，count 仍 1
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, reqWithCookie("POST", "/teams/acme/skills/my-skill/star", owner, ""))
+	if w.Code != 204 {
+		t.Fatalf("star again: %d", w.Code)
+	}
+	w = getWithCookie(t, r, owner, "/teams/acme/skills/my-skill")
+	if !contains(w.Body.String(), `"star_count":1`) {
+		t.Fatalf("expected star_count still 1: %s", w.Body.String())
+	}
+
+	// unstar → is_starred=false, count=0
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, reqWithCookie("DELETE", "/teams/acme/skills/my-skill/star", owner, ""))
+	if w.Code != 204 {
+		t.Fatalf("unstar: %d", w.Code)
+	}
+	w = getWithCookie(t, r, owner, "/teams/acme/skills/my-skill")
+	body = w.Body.String()
+	if !contains(body, `"is_starred":false`) {
+		t.Fatalf("expected is_starred false: %s", body)
+	}
+	if !contains(body, `"star_count":0`) {
+		t.Fatalf("expected star_count 0: %s", body)
+	}
+}
+
+func TestE2E_NonMemberStar_Forbidden(t *testing.T) {
+	r := setupTeamApp(t)
+	owner := registerAndLogin(t, r, "owner@x.com", "password1")
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("POST", "/teams", owner, `{"slug":"acme","name":"Acme"}`))
+	publishSkill(t, r, owner, "acme", "my-skill", "1.0.0", []byte("x"))
+
+	other := registerAndLogin(t, r, "other@x.com", "password1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, reqWithCookie("POST", "/teams/acme/skills/my-skill/star", other, ""))
+	if w.Code != 403 {
+		t.Fatalf("non-member star: got %d", w.Code)
+	}
+}
+
+func TestE2E_ListMyStars(t *testing.T) {
+	r := setupTeamApp(t)
+	owner := registerAndLogin(t, r, "owner@x.com", "password1")
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("POST", "/teams", owner, `{"slug":"acme","name":"Acme"}`))
+	publishSkill(t, r, owner, "acme", "my-skill", "1.0.0", []byte("x"))
+	// star
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, reqWithCookie("POST", "/teams/acme/skills/my-skill/star", owner, ""))
+	if w.Code != 204 {
+		t.Fatalf("star: %d", w.Code)
+	}
+
+	// GET /me/stars 含该 skill
+	w = getWithCookie(t, r, owner, "/me/stars")
+	if w.Code != 200 {
+		t.Fatalf("my stars: %d %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !contains(body, "my-skill") {
+		t.Fatalf("starred skill missing: %s", body)
+	}
+	if !contains(body, "1.0.0") {
+		t.Fatalf("latest version missing: %s", body)
+	}
+
+	// unstar 后 /me/stars 不含
+	r.ServeHTTP(httptest.NewRecorder(), reqWithCookie("DELETE", "/teams/acme/skills/my-skill/star", owner, ""))
+	w = getWithCookie(t, r, owner, "/me/stars")
+	if contains(w.Body.String(), "my-skill") {
+		t.Fatalf("starred skill should be gone: %s", w.Body.String())
+	}
+}
+
+func TestE2E_GlobalSkill_AnyoneCanStar(t *testing.T) {
+	r := setupTeamApp(t)
+	cfg, err := config.Load("../../../config/config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gdb, err := db.New(cfg.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := storage.New(cfg.Storage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var globalID, userID, skillID string
+	gdb.Raw("SELECT id::text FROM teams WHERE slug='global'").Scan(&globalID)
+	gdb.Raw("INSERT INTO users(email,username,password_hash,role,status) VALUES('gpub@x.com','gpub','x','user','active') RETURNING id::text").Scan(&userID)
+	gdb.Raw("INSERT INTO skills(team_id,name) VALUES(?,'global-tool') RETURNING id::text", globalID).Scan(&skillID)
+	payload := []byte("x")
+	sha := sha256Hex(payload)
+	key := "skills/" + skillID + "/1.0.0/" + sha + ".tar.gz"
+	if _, err := store.Put(context.Background(), key, bytes.NewReader(payload), 1, "application/gzip"); err != nil {
+		t.Fatal(err)
+	}
+	if err := gdb.Exec("INSERT INTO skill_versions(skill_id,version,storage_key,size,sha256,content_type,publisher_user_id) VALUES(?,?,?,?,?,?,?)",
+		skillID, "1.0.0", key, 1, sha, "application/gzip", userID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 任意认证用户可 star global skill
+	u := registerAndLogin(t, r, "starrer@x.com", "password1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, reqWithCookie("POST", "/teams/global/skills/global-tool/star", u, ""))
+	if w.Code != 204 {
+		t.Fatalf("star global: %d %s", w.Code, w.Body.String())
+	}
+	w = getWithCookie(t, r, u, "/teams/global/skills/global-tool")
+	if !contains(w.Body.String(), `"is_starred":true`) {
+		t.Fatalf("expected is_starred true: %s", w.Body.String())
+	}
+}

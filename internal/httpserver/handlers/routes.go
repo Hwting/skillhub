@@ -25,6 +25,7 @@ func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRep
 
 	skillH := NewSkillHandlers(skillSvc, teamSvc)
 	authed.GET("/skills", skillH.Search)
+	authed.GET("/me/stars", skillH.ListMyStars)
 
 	admin := r.Group("/admin")
 	admin.Use(auth.AuthRequired(sm, userRepo), auth.RequireRole(user.RolePlatformAdmin))
@@ -62,5 +63,7 @@ func Register(r *gin.Engine, svc *user.Service, sm *auth.SessionManager, userRep
 		skillGroup.GET("/:name", auth.TeamScoped(teamSvc, "member"), skillH.GetSkill)
 		skillGroup.POST("/:name/versions/:version", auth.TeamScoped(teamSvc, "member"), skillH.Publish)
 		skillGroup.GET("/:name/versions/:version", auth.TeamScoped(teamSvc, "member"), skillH.Download)
+		skillGroup.POST("/:name/star", auth.TeamScoped(teamSvc, "member"), skillH.Star)
+		skillGroup.DELETE("/:name/star", auth.TeamScoped(teamSvc, "member"), skillH.Unstar)
 	}
 }
