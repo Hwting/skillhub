@@ -92,3 +92,49 @@ func TestRepo_VersionConflict(t *testing.T) {
 		t.Fatalf("expected ok for new version: %v", err)
 	}
 }
+
+func TestRepo_Search(t *testing.T) {
+	r, tid, _ := setupSkillDB(t)
+	ctx := context.Background()
+	if err := r.CreateSkill(ctx, &Skill{TeamID: tid, Name: "go-lint"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.CreateSkill(ctx, &Skill{TeamID: tid, Name: "go-format"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 命中 lint
+	rows, err := r.Search(ctx, []uuid.UUID{tid}, "lint", 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Name != "go-lint" {
+		t.Fatalf("search lint: %+v", rows)
+	}
+	if rows[0].TeamSlug != "acme" {
+		t.Fatalf("team_slug=%s", rows[0].TeamSlug)
+	}
+
+	// 空查询返回全部
+	rows, _ = r.Search(ctx, []uuid.UUID{tid}, "", 100, 0)
+	if len(rows) != 2 {
+		t.Fatalf("empty q: %d", len(rows))
+	}
+
+	// 不可见团队：随机 id 不命中
+	hidden := uuid.New()
+	rows, _ = r.Search(ctx, []uuid.UUID{hidden}, "lint", 100, 0)
+	if len(rows) != 0 {
+		t.Fatalf("hidden team leaked: %d", len(rows))
+	}
+
+	// 分页
+	rows, _ = r.Search(ctx, []uuid.UUID{tid}, "", 1, 0)
+	if len(rows) != 1 {
+		t.Fatalf("limit: %d", len(rows))
+	}
+	rows, _ = r.Search(ctx, []uuid.UUID{tid}, "", 1, 1)
+	if len(rows) != 1 {
+		t.Fatalf("offset: %d", len(rows))
+	}
+}

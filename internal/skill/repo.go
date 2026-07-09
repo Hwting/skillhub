@@ -24,6 +24,13 @@ type Repo interface {
 	CreateVersion(ctx context.Context, v *SkillVersion) error
 	GetVersion(ctx context.Context, skillID uuid.UUID, version string) (*SkillVersion, error)
 	ListVersions(ctx context.Context, skillID uuid.UUID) ([]SkillVersion, error)
+	Search(ctx context.Context, teamIDs []uuid.UUID, q string, limit, offset int) ([]SearchRow, error)
+}
+
+// SearchRow is a skill plus its team slug, the result of a search query.
+type SearchRow struct {
+	Skill
+	TeamSlug string
 }
 
 type repo struct{ db *gorm.DB }
@@ -95,4 +102,47 @@ func (r *repo) ListVersions(ctx context.Context, skillID uuid.UUID) ([]SkillVers
 		return nil, fmt.Errorf("list versions: %w", err)
 	}
 	return vs, nil
+}
+
+// Search returns skills in the given teams whose name matches q (full-text via
+// the search_vector generated column), JOINed to teams to carry the team slug.
+// An empty q skips FTS and orders by updated_at DESC. limit is clamped to [1,100].
+// An empty teamIDs returns nothing (no visible teams).
+func (r *repo) Search(ctx context.Context, teamIDs []uuid.UUID, q string, limit, offset int) ([]SearchRow, error) {
+	if len(teamIDs) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	q = strings.TrimSpace(q)
+
+	type searchRow struct {
+		Skill
+		TeamSlug string `gorm:"column:team_slug"`
+	}
+	var rows []searchRow
+	tx := r.db.WithContext(ctx).Table("skills").
+		Select("skills.*, teams.slug AS team_slug").
+		Joins("JOIN teams ON teams.id = skills.team_id").
+		Where("skills.team_id IN ?", teamIDs)
+	if q != "" {
+		tx = tx.
+			Where("skills.search_vector @@ plainto_tsquery('simple', ?)", q).
+			Order(gorm.Expr("ts_rank(skills.search_vector, plainto_tsquery('simple', ?)) DESC", q)).
+			Order("skills.name ASC")
+	} else {
+		tx = tx.Order("skills.updated_at DESC").Order("skills.name ASC")
+	}
+	if err := tx.Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("search skills: %w", err)
+	}
+	out := make([]SearchRow, len(rows))
+	for i, rr := range rows {
+		out[i] = SearchRow{Skill: rr.Skill, TeamSlug: rr.TeamSlug}
+	}
+	return out, nil
 }

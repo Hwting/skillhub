@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -95,6 +96,30 @@ func (m *mockSkillRepo) GetVersion(ctx context.Context, skillID uuid.UUID, versi
 func (m *mockSkillRepo) ListVersions(ctx context.Context, skillID uuid.UUID) ([]SkillVersion, error) {
 	out := make([]SkillVersion, len(m.versions[skillID]))
 	copy(out, m.versions[skillID])
+	return out, nil
+}
+func (m *mockSkillRepo) Search(ctx context.Context, teamIDs []uuid.UUID, q string, limit, offset int) ([]SearchRow, error) {
+	visible := map[uuid.UUID]bool{}
+	for _, tid := range teamIDs {
+		visible[tid] = true
+	}
+	var out []SearchRow
+	for _, sk := range m.skills {
+		if !visible[sk.TeamID] {
+			continue
+		}
+		if q != "" && !strings.Contains(sk.Name, q) {
+			continue
+		}
+		out = append(out, SearchRow{Skill: *sk, TeamSlug: "mock"})
+	}
+	if offset >= len(out) {
+		return nil, nil
+	}
+	out = out[offset:]
+	if limit < len(out) {
+		out = out[:limit]
+	}
 	return out, nil
 }
 
