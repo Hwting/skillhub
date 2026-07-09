@@ -208,3 +208,39 @@ func TestOpenVersion(t *testing.T) {
 		t.Fatalf("size=%d", sv.Size)
 	}
 }
+
+func TestService_Search_LatestVersion(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	pub := uuid.New()
+	_, _ = s.Publish(ctx, tid, "go-lint", "1.0.0", bytes.NewReader([]byte("a")), 1, ContentTypeTarball, pub)
+	_, _ = s.Publish(ctx, tid, "go-lint", "1.2.0", bytes.NewReader([]byte("b")), 1, ContentTypeTarball, pub)
+	_, _ = s.Publish(ctx, tid, "go-format", "0.1.0", bytes.NewReader([]byte("c")), 1, ContentTypeTarball, pub)
+
+	res, err := s.Search(ctx, []uuid.UUID{tid}, "lint", 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Name != "go-lint" {
+		t.Fatalf("res=%+v", res)
+	}
+	if res[0].LatestVersion == nil || res[0].LatestVersion.Version != "1.2.0" {
+		t.Fatalf("latest=%+v", res[0].LatestVersion)
+	}
+}
+
+func TestService_Search_PaginationClamp(t *testing.T) {
+	s, _, _ := newSkillSvc()
+	ctx := context.Background()
+	tid := uuid.New()
+	// page<1 → 1; pageSize>100 → 100; 不报错
+	if _, err := s.Search(ctx, []uuid.UUID{tid}, "", 0, 500); err != nil {
+		t.Fatal(err)
+	}
+	// q 太长 → validation_failed
+	longQ := strings.Repeat("a", 257)
+	if _, err := s.Search(ctx, []uuid.UUID{tid}, longQ, 1, 20); err == nil {
+		t.Fatal("expected query too long")
+	}
+}

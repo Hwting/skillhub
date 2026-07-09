@@ -133,3 +133,57 @@ func isConflict(err error) bool {
 	e, ok := err.(*apperr.Error)
 	return ok && e.Code == "conflict"
 }
+
+// SearchResult is a skill plus its team slug and latest version (by semver),
+// for display in search listings.
+type SearchResult struct {
+	Skill
+	TeamSlug      string
+	LatestVersion *SkillVersion // nil if the skill has no versions yet
+}
+
+// Search returns the skills visible to the given team set, optionally filtered
+// by a name full-text query, with the latest version attached. page is 1-based;
+// pageSize defaults to 20 and is clamped to 100.
+func (s *Service) Search(ctx context.Context, teamIDs []uuid.UUID, q string, page, pageSize int) ([]SearchResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	if len(q) > 256 {
+		return nil, apperr.New("validation_failed", "skill", "query too long")
+	}
+	offset := (page - 1) * pageSize
+	rows, err := s.repo.Search(ctx, teamIDs, q, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SearchResult, len(rows))
+	for i, row := range rows {
+		out[i] = SearchResult{Skill: row.Skill, TeamSlug: row.TeamSlug}
+		vs, err := s.repo.ListVersions(ctx, row.ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].LatestVersion = latestVersion(vs)
+	}
+	return out, nil
+}
+
+func latestVersion(vs []SkillVersion) *SkillVersion {
+	if len(vs) == 0 {
+		return nil
+	}
+	best := &vs[0]
+	for i := 1; i < len(vs); i++ {
+		if Compare(vs[i].Version, best.Version) > 0 {
+			best = &vs[i]
+		}
+	}
+	return best
+}
