@@ -26,6 +26,11 @@ type Repo interface {
 	GetVersion(ctx context.Context, skillID uuid.UUID, version string) (*SkillVersion, error)
 	ListVersions(ctx context.Context, skillID uuid.UUID) ([]SkillVersion, error)
 	Search(ctx context.Context, teamIDs []uuid.UUID, q string, limit, offset int) ([]SearchRow, error)
+	Star(ctx context.Context, userID, skillID uuid.UUID) error
+	Unstar(ctx context.Context, userID, skillID uuid.UUID) error
+	IsStarred(ctx context.Context, userID, skillID uuid.UUID) (bool, error)
+	CountStars(ctx context.Context, skillID uuid.UUID) (int64, error)
+	ListStarredSkills(ctx context.Context, userID uuid.UUID, limit, offset int) ([]SearchRow, error)
 }
 
 // SearchRow is a skill plus its team slug, the result of a search query.
@@ -151,6 +156,70 @@ func (r *repo) Search(ctx context.Context, teamIDs []uuid.UUID, q string, limit,
 	}
 	if err := tx.Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("search skills: %w", err)
+	}
+	out := make([]SearchRow, len(rows))
+	for i, rr := range rows {
+		out[i] = SearchRow{Skill: rr.Skill, TeamSlug: rr.TeamSlug}
+	}
+	return out, nil
+}
+
+// Star idempotently records a user's star on a skill (ON CONFLICT DO NOTHING).
+func (r *repo) Star(ctx context.Context, userID, skillID uuid.UUID) error {
+	if err := r.db.WithContext(ctx).Exec("INSERT INTO skill_stars(user_id, skill_id) VALUES (?, ?) ON CONFLICT DO NOTHING", userID, skillID).Error; err != nil {
+		return fmt.Errorf("star skill: %w", err)
+	}
+	return nil
+}
+
+// Unstar removes a user's star on a skill. Missing rows are not an error.
+func (r *repo) Unstar(ctx context.Context, userID, skillID uuid.UUID) error {
+	if err := r.db.WithContext(ctx).Table("skill_stars").Where("user_id = ? AND skill_id = ?", userID, skillID).Delete(nil).Error; err != nil {
+		return fmt.Errorf("unstar skill: %w", err)
+	}
+	return nil
+}
+
+// IsStarred reports whether userID has starred skillID.
+func (r *repo) IsStarred(ctx context.Context, userID, skillID uuid.UUID) (bool, error) {
+	var n int64
+	if err := r.db.WithContext(ctx).Table("skill_stars").Where("user_id = ? AND skill_id = ?", userID, skillID).Count(&n).Error; err != nil {
+		return false, fmt.Errorf("is starred: %w", err)
+	}
+	return n > 0, nil
+}
+
+// CountStars returns the total star count for a skill.
+func (r *repo) CountStars(ctx context.Context, skillID uuid.UUID) (int64, error) {
+	var n int64
+	if err := r.db.WithContext(ctx).Table("skill_stars").Where("skill_id = ?", skillID).Count(&n).Error; err != nil {
+		return 0, fmt.Errorf("count stars: %w", err)
+	}
+	return n, nil
+}
+
+// ListStarredSkills returns the skills a user has starred, newest star first.
+// limit is clamped to [1,100], offset to >=0.
+func (r *repo) ListStarredSkills(ctx context.Context, userID uuid.UUID, limit, offset int) ([]SearchRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	type searchRow struct {
+		Skill
+		TeamSlug string `gorm:"column:team_slug"`
+	}
+	var rows []searchRow
+	if err := r.db.WithContext(ctx).Table("skill_stars").
+		Select("skills.*, teams.slug AS team_slug").
+		Joins("JOIN skills ON skills.id = skill_stars.skill_id").
+		Joins("JOIN teams ON teams.id = skills.team_id").
+		Where("skill_stars.user_id = ?", userID).
+		Order("skill_stars.created_at DESC").
+		Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list starred: %w", err)
 	}
 	out := make([]SearchRow, len(rows))
 	for i, rr := range rows {

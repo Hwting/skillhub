@@ -40,10 +40,11 @@ func (m *memStore) Stat(ctx context.Context, key string) (storage.ObjectInfo, er
 type mockSkillRepo struct {
 	skills   map[uuid.UUID]*Skill
 	versions map[uuid.UUID][]SkillVersion
+	stars    map[[2]uuid.UUID]bool // (userID, skillID)
 }
 
 func newMockSkillRepo() *mockSkillRepo {
-	return &mockSkillRepo{skills: map[uuid.UUID]*Skill{}, versions: map[uuid.UUID][]SkillVersion{}}
+	return &mockSkillRepo{skills: map[uuid.UUID]*Skill{}, versions: map[uuid.UUID][]SkillVersion{}, stars: map[[2]uuid.UUID]bool{}}
 }
 
 func (m *mockSkillRepo) CreateSkill(ctx context.Context, s *Skill) error {
@@ -118,6 +119,52 @@ func (m *mockSkillRepo) Search(ctx context.Context, teamIDs []uuid.UUID, q strin
 			continue
 		}
 		out = append(out, SearchRow{Skill: *sk, TeamSlug: "mock"})
+	}
+	if offset >= len(out) {
+		return nil, nil
+	}
+	out = out[offset:]
+	if limit < len(out) {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (m *mockSkillRepo) Star(ctx context.Context, userID, skillID uuid.UUID) error {
+	m.stars[[2]uuid.UUID{userID, skillID}] = true
+	return nil
+}
+func (m *mockSkillRepo) Unstar(ctx context.Context, userID, skillID uuid.UUID) error {
+	delete(m.stars, [2]uuid.UUID{userID, skillID})
+	return nil
+}
+func (m *mockSkillRepo) IsStarred(ctx context.Context, userID, skillID uuid.UUID) (bool, error) {
+	return m.stars[[2]uuid.UUID{userID, skillID}], nil
+}
+func (m *mockSkillRepo) CountStars(ctx context.Context, skillID uuid.UUID) (int64, error) {
+	var n int64
+	for k := range m.stars {
+		if k[1] == skillID {
+			n++
+		}
+	}
+	return n, nil
+}
+func (m *mockSkillRepo) ListStarredSkills(ctx context.Context, userID uuid.UUID, limit, offset int) ([]SearchRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	var out []SearchRow
+	for k := range m.stars {
+		if k[0] != userID {
+			continue
+		}
+		if sk, ok := m.skills[k[1]]; ok {
+			out = append(out, SearchRow{Skill: *sk, TeamSlug: "mock"})
+		}
 	}
 	if offset >= len(out) {
 		return nil, nil
